@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Iniciar sesion · BI Web{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-intro">
+    <p class="eyebrow">Analitica interna</p>
+    <h1>Entra a tu espacio de tableros</h1>
+    <p class="lead">Accede con las credenciales que te asigno el administrador. Cada rol ve solo los modulos y tableros que le corresponden.</p>
+    <ul class="auth-points">
+      <li>Administrador: control de usuarios, roles, accesos y auditoria.</li>
+      <li>Auditor: lectura completa y trazabilidad, sin cambios.</li>
+      <li>Desarrollador: crea y ajusta visualizaciones asignadas.</li>
+      <li>Visualizacion: consulta solo sus tableros.</li>
+    </ul>
+  </div>
+
+  <form class="auth-card" method="post" action="{{ url_for('login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <h2>Iniciar sesion</h2>
+    <p class="hint">Usa tu usuario y contrasena.</p>
+
+    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+    <label>Usuario
+      <input name="username" value="{{ username }}" autocomplete="username" required autofocus>
+    </label>
+    <label>Contrasena
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="primary" type="submit">Entrar</button>
+    <p class="hint">Si olvidaste tu contrasena, pide al administrador que la restablezca.</p>
+  </form>
+</section>
+{% endblock %}

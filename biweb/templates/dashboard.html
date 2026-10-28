@@ -1,0 +1,489 @@
+{% extends "base.html" %}
+{% block title %}{{ dashboard.name }} · BI Web{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block topbar_actions %}
+<a class="ghost btn" href="{{ url_for('index') }}">Tableros</a>
+<a class="ghost btn" href="{{ url_for('dashboard_only_view', dashboard_id=dashboard.id) }}" target="_blank" rel="noopener">Vista de lectura</a>
+<div class="mode-switch" id="mode-switch" role="group" aria-label="Cambiar modo">
+  <button type="button" data-mode="view">Visualizacion</button>
+  <button type="button" data-mode="design" {% if not design_enabled or not can_edit %}disabled{% endif %}>Diseno</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-shell" id="shell"
+     data-dashboard-id="{{ dashboard.id }}"
+     data-initial-mode="{{ initial_mode }}">
+  <aside class="design-panel" id="design-panel">
+    <div class="panel-head">
+      <h2>Panel de diseno</h2>
+      <p class="hint">Solo visible en modo diseno. Los cambios se guardan en el servidor.</p>
+    </div>
+
+    <div class="design-panel-layout">
+      <nav class="design-nav" aria-label="Paneles del diseno">
+        <button type="button" class="design-tab active" data-design-panel="visualizations" aria-controls="design-pane-visualizations" aria-pressed="true" title="Visualizaciones">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/></svg>
+          <span>Visual</span>
+        </button>
+        <button type="button" class="design-tab" data-design-panel="data" aria-controls="design-pane-data" aria-pressed="false" title="Datos y modelado">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg>
+          <span>Datos</span>
+        </button>
+        <button type="button" class="design-tab" data-design-panel="filters" aria-controls="design-pane-filters" aria-pressed="false" title="Filtros">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.5 7.5V19l-3 1v-7.5z"/></svg>
+          <span>Filtros</span>
+        </button>
+        <button type="button" class="design-tab" data-design-panel="dashboard" aria-controls="design-pane-dashboard" aria-pressed="false" title="Configuracion del tablero">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 2.9-.2-.1a1.7 1.7 0 0 0-1.8.2l-.2.1h-3.4l-.1-.2a1.7 1.7 0 0 0-1.5-1l-.2-.1-1.7-2.9.1-.2a1.7 1.7 0 0 0-.3-1.8L8.7 14V10l.2-.1a1.7 1.7 0 0 0 .4-1.8l-.1-.2L11 5l.2.1a1.7 1.7 0 0 0 1.8-.2l.2-.1h3.4l.1.2a1.7 1.7 0 0 0 1.5 1l.2.1 1.7 2.9-.1.2a1.7 1.7 0 0 0 .3 1.8l.2.2v4z"/></svg>
+          <span>Tablero</span>
+        </button>
+      </nav>
+
+      <div class="design-panel-content">
+        <section class="design-pane" id="design-pane-visualizations" data-design-pane="visualizations" aria-label="Visualizaciones">
+          <div class="panel-head">
+            <h2>Visualizaciones</h2>
+            <p class="hint">Elige un grafico y configura el widget sin mezclarlo con las fuentes de datos.</p>
+          </div>
+        </section>
+        <section class="design-pane" id="design-pane-data" data-design-pane="data" aria-label="Datos y modelado" hidden>
+          <div class="panel-head">
+            <h2>Datos y modelado</h2>
+            <p class="hint">Administra conexiones, datasets, tablas importadas y calculos.</p>
+          </div>
+        </section>
+        <section class="design-pane" id="design-pane-filters" data-design-pane="filters" aria-label="Filtros del tablero" hidden>
+          <div class="panel-head">
+            <h2>Filtros del tablero</h2>
+            <p class="hint">Revisa y limpia los filtros activos en las visualizaciones.</p>
+          </div>
+          <p class="hint">Los filtros se aplican al interactuar con widgets de tipo segmentador o panel de filtros.</p>
+          <div class="row filter-actions">
+            <strong>Filtros activos</strong>
+            <button type="button" class="link" id="clear-filters" disabled>Limpiar todos</button>
+          </div>
+          <div class="list" id="active-filter-list" aria-live="polite"></div>
+        </section>
+        <section class="design-pane" id="design-pane-dashboard" data-design-pane="dashboard" aria-label="Configuracion del tablero" hidden>
+          <div class="panel-head">
+            <h2>Configuracion del tablero</h2>
+            <p class="hint">Ajustes generales y acciones administrativas de este tablero.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="design-source" hidden>
+    <div class="token-box" id="token-box" hidden>
+      <label>Token de diseno
+        <input id="design-token" type="password" placeholder="X-Design-Token">
+      </label>
+    </div>
+
+    <details class="side-section" id="dashboard-section" open>
+      <summary>Tablero</summary>
+      <form id="dash-form" class="stack">
+        <label>Nombre <input id="dash-name" maxlength="120" required></label>
+        <label>Descripcion <textarea id="dash-desc" rows="2" maxlength="240"></textarea></label>
+        <button class="primary" type="submit">Guardar tablero</button>
+      </form>
+    </details>
+
+    {% if can('connections.manage') %}
+    <details class="side-section" id="connections-section" open>
+      <summary>Conexiones</summary>
+      <div class="list" id="conn-list"></div>
+      <form id="conn-form" class="stack">
+        <input type="hidden" id="conn-id">
+        <label>Nombre <input id="conn-name" required maxlength="80" placeholder="Mi base de datos"></label>
+        <label>Tipo
+          <select id="conn-kind">
+            <option value="sqlite">SQLite</option>
+            <option value="postgres">PostgreSQL</option>
+            <option value="supabase">Supabase (PostgreSQL)</option>
+            <option value="mysql">MySQL / MariaDB</option>
+            <option value="sqlserver">SQL Server</option>
+            <option value="oracle">Oracle</option>
+            <option value="bigquery">BigQuery</option>
+          </select>
+        </label>
+        <div class="kind-fields" data-kinds="sqlite">
+          <label>Archivo (.db)
+            <input id="conn-path" placeholder="var/sample.db">
+          </label>
+        </div>
+        <div class="kind-fields" data-kinds="postgres supabase mysql sqlserver oracle" hidden>
+          <div class="grid-2">
+            <label>Host <input id="conn-host" placeholder="localhost"></label>
+            <label>Puerto <input id="conn-port" type="number" min="1" max="65535"></label>
+          </div>
+          <label>Base de datos / Service name <input id="conn-database"></label>
+          <div class="grid-2">
+            <label>Usuario <input id="conn-user"></label>
+            <label>Contrasena <input id="conn-password" type="password" autocomplete="new-password"></label>
+          </div>
+          <p class="hint">Supabase usa el host <code>db.&lt;proyecto&gt;.supabase.co</code>, puerto 5432 y base <code>postgres</code>. Oracle usa el service name en el campo de base de datos.</p>
+          <div class="kind-fields" data-kinds="postgres supabase" hidden>
+            <label>SSL mode
+              <select id="conn-sslmode">
+                <option value="prefer">prefer</option>
+                <option value="require">require</option>
+                <option value="disable">disable</option>
+              </select>
+            </label>
+          </div>
+          <div class="kind-fields" data-kinds="sqlserver" hidden>
+            <label class="check">
+              <input id="conn-trusted" type="checkbox">
+              <span>Autenticacion de Windows / Trusted_Connection
+                <small>Si se marca, no se usa usuario ni contrasena. En Linux requiere Kerberos configurado (krb5.conf + kinit).</small>
+              </span>
+            </label>
+            <label>Driver ODBC
+              <input id="conn-driver" placeholder="ODBC Driver 18 for SQL Server">
+            </label>
+            <div class="grid-2">
+              <label>Encrypt
+                <select id="conn-encrypt">
+                  <option value="yes">yes</option>
+                  <option value="no">no</option>
+                </select>
+              </label>
+              <label>TrustServerCertificate
+                <select id="conn-trust-cert">
+                  <option value="yes">yes</option>
+                  <option value="no">no</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="kind-fields" data-kinds="bigquery" hidden>
+          <div class="grid-2">
+            <label>Project ID <input id="conn-project" placeholder="mi-proyecto"></label>
+            <label>Dataset <input id="conn-bq-dataset" placeholder="analytics"></label>
+          </div>
+          <div class="grid-2">
+            <label>Location <input id="conn-location" placeholder="US"></label>
+            <label>Credenciales JSON (opcional) <input id="conn-credentials" placeholder="/ruta/service-account.json"></label>
+          </div>
+          <p class="hint">Sin credenciales se usa Application Default Credentials (<code>gcloud auth application-default login</code>).</p>
+        </div>
+        <div class="row">
+          <button type="button" class="ghost" id="conn-test">Probar</button>
+          <button type="submit" class="primary">Guardar</button>
+          <button type="button" class="link" id="conn-cancel" hidden>Cancelar</button>
+        </div>
+        <pre class="result" id="conn-result" hidden></pre>
+      </form>
+
+      <details class="sub-section">
+        <summary>Importar conexiones (JSON)</summary>
+        <textarea id="import-payload" rows="6" spellcheck="false" placeholder='{"connections":[{"name":"DW","kind":"postgres","config":{"host":"db","database":"dw","user":"lector","password":"..."}}]}'></textarea>
+        <button type="button" class="ghost" id="import-btn">Importar</button>
+        <pre class="result" id="import-result" hidden></pre>
+      </details>
+    </details>
+    {% endif %}
+
+    {% if can('datasets.manage') %}
+    <details class="side-section" id="datasets-section" open>
+      <summary>Datasets</summary>
+      <div class="list" id="ds-list"></div>
+      <form id="ds-form" class="stack">
+        <input type="hidden" id="ds-id">
+        <label>Conexion <select id="ds-connection"></select></label>
+        <label>Nombre <input id="ds-name" required maxlength="80" placeholder="Ventas"></label>
+        <label>SQL (solo SELECT / WITH)
+          <textarea id="ds-sql" rows="6" spellcheck="false" placeholder="SELECT month, region, revenue FROM sales ORDER BY month"></textarea>
+        </label>
+        <div class="row">
+          <button type="button" class="ghost" id="ds-preview-btn">Probar</button>
+          <button type="submit" class="primary">Guardar</button>
+          <button type="button" class="link" id="ds-cancel" hidden>Cancelar</button>
+        </div>
+        <div id="ds-preview-out"></div>
+      </form>
+    </details>
+    {% endif %}
+
+    {% if can('datasets.manage') or can('connections.manage') %}
+    <details class="side-section" id="import-section" open>
+      <summary>Tablas e importacion</summary>
+      <p class="hint">Lista las tablas de una fuente, asigna alias e importa CSV, Parquet o APIs.</p>
+      <div class="stack">
+        <label>Fuente <select id="imp-connection"></select></label>
+        <button type="button" class="ghost" id="imp-list-btn">Listar tablas</button>
+        <div class="list" id="imp-tables"></div>
+      </div>
+      {% if can('datasets.manage') %}
+      <details class="sub-section" open>
+        <summary>Importar archivo</summary>
+        <form id="imp-file-form" class="stack">
+          <label>Archivo <input id="imp-file" type="file" accept=".csv,.tsv,.txt,.parquet" required></label>
+          <div class="grid-2">
+            <label>Tabla <input id="imp-table" maxlength="60" placeholder="ventas_2026"></label>
+            <label>Nombre del dataset <input id="imp-name" maxlength="80" placeholder="Ventas importadas"></label>
+          </div>
+          <button type="submit" class="primary">Importar archivo</button>
+          <pre class="result" id="imp-file-result" hidden></pre>
+        </form>
+      </details>
+      {% endif %}
+      {% if can('import.api') %}
+      <details class="sub-section" id="imp-api-box">
+        <summary>Scripts de API (Python)</summary>
+        <p class="hint">Deja el resultado en <code>result</code>, <code>df</code> o <code>rows</code>. Tienes <code>requests</code>, <code>pandas</code> y <code>polars</code> disponibles.</p>
+        <label>Script guardado <select id="imp-script"></select></label>
+        <div class="grid-2">
+          <label>Nombre <input id="imp-script-name" maxlength="80"></label>
+          <label>Tabla destino <input id="imp-script-table" maxlength="60"></label>
+        </div>
+        <label>Descripcion <input id="imp-script-desc" maxlength="240"></label>
+        <label>Codigo Python
+          <textarea id="imp-script-code" rows="8" spellcheck="false" placeholder="resp = requests.get('https://api.ejemplo.com/datos')\nresult = resp.json()['data']"></textarea>
+        </label>
+        <div class="row">
+          <button type="button" class="ghost" id="imp-script-new">Nuevo</button>
+          <button type="button" class="ghost" id="imp-script-save">Guardar</button>
+          <button type="button" class="ghost" id="imp-script-delete">Eliminar</button>
+          <button type="button" class="ghost" id="imp-script-preview">Probar</button>
+          <button type="button" class="primary" id="imp-script-run">Importar</button>
+        </div>
+        <pre class="result" id="imp-script-result" hidden></pre>
+      </details>
+      {% endif %}
+      <p class="hint">Para importar con una consulta SQL usa la seccion <strong>Datasets</strong> con la conexion del motor (SQL Server, MariaDB, Supabase, Oracle, BigQuery...).</p>
+    </details>
+    {% endif %}
+
+    {% if can_edit %}
+    <details class="side-section" id="palette-section" open>
+      <summary>Paleta de visualizaciones</summary>
+      <p class="hint">Arrastra un icono al lienzo o haz clic para configurarlo.</p>
+      <div id="chart-palette" class="chart-palette"></div>
+      <div id="palette-tooltip" class="palette-tooltip" hidden></div>
+    </details>
+    {% endif %}
+
+    <details class="side-section" open>
+      <summary>Widget seleccionado</summary>
+      <form id="w-form" class="stack">
+        <input type="hidden" id="w-id">
+        <input type="hidden" id="w-pos-x" value="">
+        <input type="hidden" id="w-pos-y" value="">
+        <label>Titulo <input id="w-title" maxlength="120" placeholder="Ingresos por region"></label>
+        <label>Dataset <select id="w-dataset"></select></label>
+        <label>Grafico
+          <select id="w-chart">
+            <optgroup label="Tablas y tarjetas">
+              <option value="table">Tabla</option>
+              <option value="kpi">KPI</option>
+            </optgroup>
+            <optgroup label="Barras y columnas">
+              <option value="bar">Barras</option>
+            </optgroup>
+            <optgroup label="Tendencias">
+              <option value="line">Linea</option>
+              <option value="pie">Circular</option>
+            </optgroup>
+          </select>
+        </label>
+        <details class="sub-section" id="w-measure-box" open>
+          <summary>Medidas calculadas con Python</summary>
+          <label>Medida aplicada (opcional) <select id="w-model"></select></label>
+          <div class="grid-2">
+            <label>Nombre <input id="w-measure-name" maxlength="80" placeholder="Ticket medio"></label>
+            <label>Tipo
+              <select id="w-measure-kind">
+                <option value="measure">Medida</option>
+                <option value="column">Columna calculada</option>
+                <option value="table_calc">Tabla calculada</option>
+              </select>
+            </label>
+          </div>
+          <label>Expresion Python
+            <textarea id="w-measure-expression" rows="3" spellcheck="false" placeholder="sum_field(rows, 'ingresos') / count_field(rows, 'pedido')"></textarea>
+          </label>
+          <button type="button" class="ghost" id="w-measure-create">Crear y aplicar medida</button>
+          <div id="w-measure-result"></div>
+        </details>
+        <div class="grid-2">
+          <label>Dimension <select id="w-x"></select></label>
+          <label>Metrica <select id="w-y"></select></label>
+        </div>
+        <div class="grid-2">
+          <label>Serie (opcional) <select id="w-series"></select></label>
+          <label>Agregacion
+            <select id="w-agg">
+              <option value="sum">sum</option>
+              <option value="avg">avg</option>
+              <option value="min">min</option>
+              <option value="max">max</option>
+              <option value="count">count</option>
+              <option value="count_distinct">count_distinct</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid-2">
+          <label>Formato
+            <select id="w-format">
+              <option value="number">numero</option>
+              <option value="currency">moneda</option>
+              <option value="percent">porcentaje</option>
+              <option value="integer">entero</option>
+            </select>
+          </label>
+          <label>Limite <input id="w-limit" type="number" min="0" step="1" placeholder="50"></label>
+        </div>
+        <details class="sub-section" id="w-advanced">
+          <summary>Campos avanzados</summary>
+          <div class="grid-2">
+            <label>Tamano (burbujas) <select id="w-size"></select></label>
+            <label>Etiqueta <select id="w-label-field"></select></label>
+          </div>
+          <div class="grid-2">
+            <label>Latitud <select id="w-lat"></select></label>
+            <label>Longitud <select id="w-lon"></select></label>
+          </div>
+          <div class="grid-2">
+            <label>Maximo / escala <input id="w-max" type="number" step="any"></label>
+            <label>Objetivo <input id="w-target" type="number" step="any"></label>
+          </div>
+          <label>Pregunta (Q&A) <input id="w-question" maxlength="200" placeholder="¿Cual es el ingreso por region?"></label>
+          <div class="grid-2">
+            <label>Texto / etiqueta <input id="w-text" maxlength="120"></label>
+            <label>URL de navegacion <input id="w-url" maxlength="300" placeholder="/d/1"></label>
+          </div>
+          <label>Tooltip <input id="w-tooltip" maxlength="200"></label>
+        </details>
+        <div class="grid-2">
+          <label>Ancho (1-12) <input id="w-w" type="number" min="1" max="12" step="1" value="3"></label>
+          <label>Alto (1-6) <input id="w-h" type="number" min="1" max="6" step="1" value="2"></label>
+        </div>
+        <div class="row">
+          <button class="primary" type="submit">Guardar widget</button>
+          <button class="link" type="button" id="w-cancel" hidden>Cancelar</button>
+        </div>
+        <p class="hint" id="w-hint"></p>
+      </form>
+    </details>
+
+    {% if can_edit %}
+    <details class="side-section" id="tools-section" open>
+      <summary>Herramientas y modelado</summary>
+      <p class="hint">Disponible solo en modo diseno. Las expresiones Python se validan con un subconjunto seguro.</p>
+      <div class="tools-tabs" role="tablist">
+        <button type="button" class="active" data-tools-tab="tables">Tablas</button>
+        <button type="button" data-tools-tab="model">Calculo</button>
+        <button type="button" data-tools-tab="profile">VertiPaq</button>
+      </div>
+
+      <div class="tools-pane" data-tools-pane="tables">
+        <div class="list" id="tools-dataset-list"></div>
+        <p class="hint">Selecciona un dataset para modelar o analizar su perfil.</p>
+      </div>
+
+      <div class="tools-pane" data-tools-pane="model" hidden>
+        <form id="model-form" class="stack">
+          <input type="hidden" id="model-id">
+          <label>Tipo
+            <select id="model-kind"></select>
+          </label>
+          <label>Dataset <select id="model-dataset"></select></label>
+          <label>Nombre <input id="model-name" maxlength="80" placeholder="Ingreso total"></label>
+          <label>Expresion Python
+            <textarea id="model-expression" rows="3" spellcheck="false" placeholder="sum_field(rows, 'revenue')"></textarea>
+          </label>
+          <details class="sub-section">
+            <summary>Ayuda y ejemplos</summary>
+            <p class="hint">Usa una expresion Python, no DAX ni codigo Python arbitrario. Se permiten operaciones, condicionales y funciones del catalogo seguro. <code>rows</code> contiene las filas del dataset; <code>row</code> es la fila actual en una columna calculada.</p>
+            <ul class="hint">
+              <li>Ingresos totales: <code>sum_field(rows, "revenue")</code></li>
+              <li>Porcentaje de margen: <code>pct(sum_field(rows, "margin"), sum_field(rows, "revenue"))</code></li>
+              <li>Precio con impuesto por fila: <code>field(row, "price", 0) * 1.19</code></li>
+              <li>Condicion: <code>ifelse(field(row, "units", 0) &gt; 10, "alto", "bajo")</code></li>
+            </ul>
+            <p class="hint">Funciones: <code>sum_field</code>, <code>avg_field</code>, <code>count_field</code>, <code>distinct_field</code>, <code>min_field</code>, <code>max_field</code>, <code>median_field</code>, <code>stdev_field</code>, <code>field</code>, <code>ifelse</code>, <code>coalesce</code> y <code>pct</code>. La expresion se valida al guardar y puedes probarla antes.</p>
+          </details>
+          <div class="grid-2">
+            <label>Medida rapida: campo <select id="quick-field"></select></label>
+            <label>Operacion
+              <select id="quick-op">
+                <option value="sum">sum</option>
+                <option value="avg">avg</option>
+                <option value="count">count</option>
+                <option value="count_distinct">count_distinct</option>
+                <option value="min">min</option>
+                <option value="max">max</option>
+                <option value="median">median</option>
+              </select>
+            </label>
+          </div>
+          <button type="button" class="ghost" id="quick-add">Insertar medida rapida</button>
+          <details class="sub-section" id="model-created-box" hidden>
+            <summary>Datos de tabla creada</summary>
+            <label>Columnas (separadas por coma) <input id="model-columns" placeholder="region, meta"></label>
+            <label>Filas JSON <textarea id="model-rows" rows="4" spellcheck="false" placeholder='[{"region":"Norte","meta":100}]'></textarea></label>
+          </details>
+          <div class="row">
+            <button type="button" class="ghost" id="model-preview-btn">Probar</button>
+            <button type="submit" class="primary">Guardar modelo</button>
+            <button type="button" class="link" id="model-cancel" hidden>Cancelar</button>
+          </div>
+          <div id="model-preview-out"></div>
+        </form>
+        <div class="list" id="model-items-list"></div>
+      </div>
+
+      <div class="tools-pane" data-tools-pane="profile" hidden>
+        <p class="hint">Cardinalidad, nulos, rangos y tamano estimado del dataset seleccionado.</p>
+        <button type="button" class="ghost" id="profile-refresh">Analizar VertiPaq</button>
+        <div id="profile-out"></div>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if can('system.reset') or can('dashboards.delete') %}
+    <details class="side-section danger-zone">
+      <summary>Zona de riesgo</summary>
+      {% if can('system.reset') %}<button type="button" class="ghost" id="reset-demo">Restaurar demo</button>{% endif %}
+      {% if can('dashboards.delete') %}<button type="button" class="link danger" id="delete-dashboard">Eliminar este tablero</button>{% endif %}
+      <p class="hint">Restaurar demo borra tableros, datasets y conexiones y vuelve a crear el ejemplo.</p>
+    </details>
+    {% endif %}
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <header class="workspace-head">
+      <div>
+        <h1 id="dash-title">{{ dashboard.name }}</h1>
+        <p id="dash-description">{{ dashboard.description or "Sin descripcion" }}</p>
+      </div>
+      <div class="workspace-meta">
+        <span class="badge" id="mode-badge">—</span>
+        <span class="hint" id="stamp"></span>
+        <button type="button" class="ghost" id="refresh">Actualizar</button>
+      </div>
+    </header>
+    <div class="canvas" id="canvas" aria-live="polite"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BIWEB = {
+    dashboardId: {{ dashboard.id|tojson }},
+    initialMode: {{ initial_mode|tojson }},
+    designEnabled: {{ design_enabled|tojson }},
+    tokenRequired: {{ token_required|tojson }},
+    canEdit: {{ can_edit|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}

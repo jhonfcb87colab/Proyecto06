@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Mi cuenta · BI Web{% endblock %}
+{% block body_class %}account-page{% endblock %}
+
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Cuenta</p>
+    <h1>Mi cuenta</h1>
+    <p class="lead">{{ current_user.full_name or current_user.username }} · {{ current_user.role_name }}</p>
+  </div>
+  <a class="ghost btn" href="{{ url_for('index') }}">Volver a tableros</a>
+</section>
+
+<div class="two-col">
+  <article class="panel">
+    <h2>Datos de acceso</h2>
+    <dl class="detail-list">
+      <dt>Usuario</dt><dd>{{ current_user.username }}</dd>
+      <dt>Correo</dt><dd>{{ current_user.email or "Sin correo" }}</dd>
+      <dt>Rol</dt><dd>{{ current_user.role_name }}</dd>
+      <dt>Ultimo acceso</dt><dd>{{ current_user.last_login_at or "—" }}</dd>
+    </dl>
+    <p class="hint">Los permisos y el acceso a tableros los administra el rol asignado.</p>
+  </article>
+
+  <article class="panel">
+    <h2>Cambiar contrasena</h2>
+    <form method="post" action="{{ url_for('account') }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Contrasena actual <input type="password" name="current_password" autocomplete="current-password" required></label>
+      <label>Nueva contrasena <input type="password" name="new_password" autocomplete="new-password" minlength="8" required></label>
+      <label>Confirmar nueva <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required></label>
+      <button class="primary" type="submit">Actualizar contrasena</button>
+    </form>
+  </article>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block body_class %}admin-page{% endblock %}
+
+{% block content %}
+<div class="admin-shell">
+  <aside class="admin-nav">
+    <p class="eyebrow">Administracion</p>
+    <h2>Control de acceso</h2>
+    <nav>
+      {% if can('admin.users') %}
+      <a href="{{ url_for('admin.users') }}" class="{{ 'active' if section == 'users' else '' }}">Usuarios</a>
+      {% endif %}
+      {% if can('admin.roles') %}
+      <a href="{{ url_for('admin.roles') }}" class="{{ 'active' if section == 'roles' else '' }}">Roles y permisos</a>
+      {% endif %}
+      {% if can('access.manage') %}
+      <a href="{{ url_for('admin.access') }}" class="{{ 'active' if section == 'access' else '' }}">Accesos por tablero</a>
+      {% endif %}
+      {% if can('monitoring.audit') %}
+      <a href="{{ url_for('admin.audit') }}" class="{{ 'active' if section == 'audit' else '' }}">Auditoria</a>
+      {% endif %}
+    </nav>
+    {% if can('system.reset') %}
+    <form method="post" action="{{ url_for('admin.reset_demo') }}" class="admin-reset">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="link danger" onclick="return confirm('¿Restaurar los datos de demostracion? Se borran tableros, datasets y conexiones.')">Restaurar demo</button>
+    </form>
+    {% endif %}
+  </aside>
+
+  <section class="admin-main">
+    {% block admin %}{% endblock %}
+  </section>
+</div>
+{% endblock %}

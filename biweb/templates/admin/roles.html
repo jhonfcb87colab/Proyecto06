@@ -1,0 +1,83 @@
+{% extends "admin/layout.html" %}
+{% block title %}Roles · BI Web{% endblock %}
+
+{% block admin %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Roles</p>
+    <h1>Roles y permisos</h1>
+    <p class="lead">Define que puede hacer cada rol. El acceso a tableros concretos se asigna por usuario.</p>
+  </div>
+  <span class="badge">{{ roles|length }} rol(es)</span>
+</div>
+
+<div class="admin-split">
+  <article class="panel">
+    <h2>{% if edit_role %}Editar {{ edit_role.name }}{% else %}Nuevo rol{% endif %}</h2>
+    {% set is_admin_role = edit_role and edit_role.slug == 'administrador' %}
+    <form method="post"
+          action="{% if edit_role %}{{ url_for('admin.role_update', role_id=edit_role.id) }}{% else %}{{ url_for('admin.roles') }}{% endif %}"
+          class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Nombre
+        <input name="name" maxlength="80" required value="{{ edit_role.name if edit_role else '' }}" {{ 'disabled' if edit_role else '' }}>
+      </label>
+      <label>Descripcion
+        <textarea name="description" rows="3" maxlength="240" {{ 'disabled' if edit_role else '' }}>{{ edit_role.description if edit_role else '' }}</textarea>
+      </label>
+
+      {% if is_admin_role %}
+      <p class="flash flash-info">El rol Administrador siempre conserva todos los permisos y no se puede limitar.</p>
+      {% endif %}
+
+      <div class="permission-groups">
+        {% for group, perms in permission_groups.items() %}
+        <fieldset class="permission-group">
+          <legend>{{ group }}</legend>
+          {% for permission in perms %}
+          <label class="check">
+            <input type="checkbox" name="permissions" value="{{ permission.key }}"
+                   {{ 'checked' if is_admin_role or permission.key in selected_permissions else '' }}
+                   {{ 'disabled' if is_admin_role else '' }}>
+            <span><strong>{{ permission.label }}</strong><small>{{ permission.description }}</small></span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+
+      {% if not is_admin_role %}
+      <div class="row">
+        <button class="primary" type="submit">{{ "Guardar permisos" if edit_role else "Crear rol" }}</button>
+        {% if edit_role %}<a class="ghost btn" href="{{ url_for('admin.roles') }}">Cancelar</a>{% endif %}
+      </div>
+      {% endif %}
+    </form>
+  </article>
+
+  <article class="panel">
+    <h2>Roles existentes</h2>
+    <div class="role-list">
+      {% for role in roles %}
+      <div class="role-item">
+        <div>
+          <strong>{{ role.name }}</strong>
+          {% if role.is_system %}<span class="badge badge-soft">Sistema</span>{% endif %}
+          <p class="hint">{{ role.description or "Sin descripcion" }}</p>
+          <small class="muted">{{ role.user_count }} usuario(s)</small>
+        </div>
+        <div class="row">
+          <a class="ghost btn small" href="{{ url_for('admin.roles', edit=role.id) }}">Editar</a>
+          {% if not role.is_system %}
+          <form method="post" action="{{ url_for('admin.role_delete', role_id=role.id) }}" class="inline-form" onsubmit="return confirm('¿Eliminar este rol?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="link danger small" type="submit">Eliminar</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</div>
+{% endblock %}

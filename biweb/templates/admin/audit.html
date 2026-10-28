@@ -1,0 +1,50 @@
+{% extends "admin/layout.html" %}
+{% block title %}Auditoria · BI Web{% endblock %}
+
+{% block admin %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Auditoria</p>
+    <h1>Registro de actividad</h1>
+    <p class="lead">Accesos, cambios de contenido y administracion. Los detalles sensibles no se guardan.</p>
+  </div>
+  <span class="badge">{{ entries|length }} evento(s)</span>
+</div>
+
+<article class="panel">
+  <form method="get" class="filters">
+    <label>Usuario <input name="username" value="{{ username }}" placeholder="admin"></label>
+    <label>Accion
+      <select name="action">
+        <option value="">Todas</option>
+        {% for item in actions %}<option value="{{ item }}" {{ 'selected' if item == action else '' }}>{{ item }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Limite <input name="limit" type="number" min="1" max="1000" value="{{ limit }}"></label>
+    <button class="ghost" type="submit">Filtrar</button>
+    <a class="link" href="{{ url_for('admin.audit') }}">Limpiar</a>
+  </form>
+
+  {% if entries %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Objetivo</th><th>Detalle</th><th>IP</th></tr></thead>
+      <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td class="nowrap">{{ entry.created_at }}</td>
+          <td>{{ entry.username or "—" }}</td>
+          <td><code>{{ entry.action }}</code></td>
+          <td>{{ entry.target or "—" }}</td>
+          <td class="detail-cell">{{ entry.detail or "—" }}</td>
+          <td class="nowrap">{{ entry.ip or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No hay eventos para los filtros seleccionados.</p>
+  {% endif %}
+</article>
+{% endblock %}

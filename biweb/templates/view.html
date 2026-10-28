@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ dashboard.name }} · Vista{% endblock %}
+{% block body_class %}view-page{% endblock %}
+
+{% block topbar_actions %}
+<a class="ghost btn" href="{{ url_for('index') }}">Tableros</a>
+<span class="badge badge-view">Solo visualizacion</span>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-shell view-mode" id="viewer" data-dashboard-id="{{ dashboard.id }}">
+  <section class="workspace">
+    <header class="workspace-head">
+      <div>
+        <h1 id="view-title">{{ dashboard.name }}</h1>
+        <p id="view-description">{{ dashboard.description or "Sin descripcion" }}</p>
+      </div>
+      <div class="workspace-meta">
+        <span class="badge badge-view">Solo lectura</span>
+        <span class="hint" id="view-stamp"></span>
+        <button type="button" class="ghost" id="view-refresh">Actualizar</button>
+      </div>
+    </header>
+    <div class="canvas" id="canvas" aria-live="polite"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BIWEB = {
+    dashboardId: {{ dashboard.id|tojson }},
+    designEnabled: {{ design_enabled|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script src="{{ url_for('static', filename='viewer.js') }}"></script>
+{% endblock %}
