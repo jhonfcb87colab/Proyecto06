@@ -1,0 +1,11 @@
+flask>=3.0
+pandas>=2.0
+pyarrow>=15.0
+requests>=2.31
+# Opcionales segun el motor que quieras conectar:
+# psycopg2-binary>=2.9     # PostgreSQL / Supabase
+# PyMySQL>=1.1             # MySQL / MariaDB
+# pyodbc>=5.0              # SQL Server (requiere Microsoft ODBC Driver)
+# oracledb>=2.0            # Oracle
+# google-cloud-bigquery>=3.0  # BigQuery
+# polars>=0.20              # Alternativa a pandas en scripts de API

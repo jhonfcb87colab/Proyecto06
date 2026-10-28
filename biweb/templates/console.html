@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Consola SQL · BI Web{% endblock %}
+{% block body_class %}console-page{% endblock %}
+
+{% block topbar_actions %}
+<a class="ghost btn" href="{{ url_for('index') }}">Tableros</a>
+{% endblock %}
+
+{% block content %}
+<section class="console-shell">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">Herramientas de desarrollo</p>
+      <h1>Consola SQL</h1>
+      <p class="lead">
+        Conecta con SQL Server, PostgreSQL, MySQL o SQLite y ejecuta codigo SQL.
+        El modo escritura permite INSERT, UPDATE, DELETE y DDL.
+      </p>
+    </div>
+    <span class="badge badge-design">Rol {{ current_user.role_name }}</span>
+  </header>
+
+  <div class="console-grid">
+    <article class="panel console-editor">
+      <div class="token-box" id="token-box" hidden>
+        <label>Token de diseno
+          <input id="design-token" type="password" placeholder="X-Design-Token">
+        </label>
+      </div>
+
+      <form id="sql-form" class="stack">
+        <div class="grid-2">
+          <label>Conexion <select id="sql-connection"></select></label>
+          <label>Modo de ejecucion
+            <select id="sql-mode">
+              <option value="read">Solo lectura (SELECT / WITH)</option>
+              <option value="write">Escritura (INSERT / UPDATE / DELETE / DDL)</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Codigo SQL
+          <textarea id="sql-text" rows="16" spellcheck="false" placeholder="SELECT TOP 100 * FROM dbo.MiTabla;&#10;&#10;-- Tambien puedes pegar un script completo separado por ; o GO"></textarea>
+        </label>
+
+        <div class="row">
+          <button class="primary" type="submit" id="sql-run">Ejecutar (Ctrl+Enter)</button>
+          <button class="ghost" type="button" id="sql-python">Copiar codigo Python</button>
+          <button class="link" type="button" id="sql-clear">Limpiar</button>
+          <span class="badge" id="sql-badge">Listo</span>
+        </div>
+
+        <p class="hint">
+          La consola solo esta disponible para los roles Desarrollo y Administrador.
+          En modo escritura los cambios se confirman con commit; usa una conexion con
+          los permisos minimos necesarios.
+        </p>
+      </form>
+    </article>
+
+    <article class="panel console-results">
+      <div class="section-head">
+        <h2>Resultados</h2>
+        <span class="hint" id="sql-summary"></span>
+      </div>
+      <div id="sql-results" class="console-output">
+        <p class="empty">Los resultados de cada sentencia apareceran aqui.</p>
+      </div>
+    </article>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BIWEB = {
+    designEnabled: {{ design_enabled|tojson }},
+    tokenRequired: {{ token_required|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script src="{{ url_for('static', filename='console.js') }}"></script>
+{% endblock %}

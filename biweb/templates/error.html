@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }} · BI Web{% endblock %}
+{% block body_class %}error-page{% endblock %}
+
+{% block topbar_actions %}
+<a class="ghost btn" href="{{ url_for('index') }}">Tableros</a>
+{% endblock %}
+
+{% block content %}
+<section class="error-card panel">
+  <p class="eyebrow">Error {{ code }}</p>
+  <h1>{{ message }}</h1>
+  <p class="lead">Revisa tus permisos o vuelve al inicio. Si el problema continua, contacta al administrador.</p>
+  <div class="row">
+    <a class="primary btn" href="{{ url_for('index') }}">Ir al inicio</a>
+    <a class="ghost btn" href="{{ url_for('account') }}">Mi cuenta</a>
+  </div>
+</section>
+{% endblock %}

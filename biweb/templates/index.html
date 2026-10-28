@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}BI Web · Tableros{% endblock %}
+{% block body_class %}index-page{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Servidor de analitica · Flask</p>
+    <h1>Disena y publica tableros desde el navegador</h1>
+    <p class="lead">
+      Hola, <strong>{{ current_user.full_name or current_user.username }}</strong>. Tu rol
+      <strong>{{ current_user.role_name }}</strong> define los modulos y tableros disponibles.
+    </p>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>{{ connection_count }}</span><small>conexiones</small></div>
+    <div class="stat"><span>{{ dataset_count }}</span><small>datasets</small></div>
+    <div class="stat"><span>{{ dashboards|length }}</span><small>tableros</small></div>
+  </div>
+</section>
+
+{% if design_enabled and (can_create or can_import) %}
+<section class="panel-grid">
+  {% if can_create %}
+  <article class="panel">
+    <h2>Nuevo tablero</h2>
+    <form id="dashboard-form" class="stack">
+      <label>Nombre
+        <input name="name" required maxlength="120" placeholder="Ej. Ventas Q4">
+      </label>
+      <label>Descripcion
+        <input name="description" maxlength="240" placeholder="Opcional">
+      </label>
+      <button class="primary" type="submit">Crear tablero</button>
+    </form>
+  </article>
+  {% endif %}
+
+  {% if can_import %}
+  <article class="panel">
+    <h2>Importar conexiones</h2>
+    <p class="hint">JSON con la misma forma que usa la API. Las contrasenas se enmascaran al leerlas.</p>
+    <form id="import-form" class="stack">
+      <textarea name="payload" rows="7" spellcheck="false" placeholder='{
+  "connections": [
+    {"name": "Ventas", "kind": "sqlite", "config": {"path": "var/sample.db"}},
+    {"name": "DW", "kind": "postgres", "config": {"host": "db", "port": 5432, "database": "dw", "user": "lector", "password": "..."}},
+    {"name": "ERP", "kind": "sqlserver", "config": {"host": "sql.local", "port": 1433, "database": "ERP", "user": "lector", "password": "..."}}
+  ]
+}'></textarea>
+      <button class="ghost" type="submit">Importar</button>
+    </form>
+  </article>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="dashboards">
+  <div class="section-head">
+    <h2>Tableros</h2>
+    <span class="badge">{{ dashboards|length }} disponible(s)</span>
+  </div>
+  {% if dashboards %}
+  <div class="card-grid">
+    {% for d in dashboards %}
+    <article class="dash-card">
+      <div>
+        <h3>{{ d.name }}</h3>
+        <p>{{ d.description or 'Sin descripcion' }}</p>
+      </div>
+      <div class="dash-actions">
+        <a class="primary btn" href="{{ url_for('dashboard_only_view', dashboard_id=d.id) }}">Ver</a>
+        {% if design_enabled and d.can_edit %}
+        <a class="ghost btn" href="{{ url_for('dashboard_view', dashboard_id=d.id, mode='design') }}">Disenar</a>
+        {% endif %}
+        {% if design_enabled and d.can_edit and can('dashboards.delete') %}
+        <button class="link danger" data-delete-dashboard="{{ d.id }}">Eliminar</button>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No hay tableros disponibles para tu usuario. El administrador puede asignarte acceso desde el panel de administracion.</p>
+  {% endif %}
+</section>
+
+<section class="notes panel">
+  <h2>Como funciona</h2>
+  <ol class="steps">
+    <li><strong>Diseno:</strong> importa conexiones (SQL Server, SQLite, PostgreSQL, MySQL), guarda consultas de solo lectura como datasets y arma widgets.</li>
+    <li><strong>Consola SQL:</strong> los roles Desarrollo y Administrador pueden ejecutar SQL de lectura o escritura desde <code>/console</code> y copiar el equivalente en Python.</li>
+    <li><strong>Servidor:</strong> Flask ejecuta las consultas con usuario/archivo de solo lectura, limite de tiempo y filas.</li>
+    <li><strong>Visualizacion:</strong> el endpoint <code>/render</code> no expone conexiones ni SQL; solo datos y configuracion de widgets.</li>
+  </ol>
+  <p class="hint">Los scripts de extraccion del instalador estan en <code>scripts/</code>.</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BIWEB = {
+    designEnabled: {{ design_enabled|tojson }},
+    tokenRequired: {{ token_required|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='index.js') }}"></script>
+{% endblock %}

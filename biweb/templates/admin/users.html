@@ -1,0 +1,99 @@
+{% extends "admin/layout.html" %}
+{% block title %}Usuarios · BI Web{% endblock %}
+
+{% block admin %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Usuarios</p>
+    <h1>Usuarios y roles</h1>
+    <p class="lead">Crea usuarios, asigna un rol y controla si pueden iniciar sesion.</p>
+  </div>
+  <span class="badge">{{ users|length }} usuario(s)</span>
+</div>
+
+<div class="two-col admin-split">
+  <article class="panel">
+    <h2>{% if edit_user %}Editar {{ edit_user.username }}{% else %}Nuevo usuario{% endif %}</h2>
+    {% if edit_user %}
+    <form method="post" action="{{ url_for('admin.user_update', user_id=edit_user.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Usuario <input value="{{ edit_user.username }}" disabled></label>
+      <label>Nombre completo <input name="full_name" maxlength="120" value="{{ edit_user.full_name }}"></label>
+      <label>Correo <input name="email" type="email" maxlength="160" value="{{ edit_user.email }}"></label>
+      <label>Rol
+        <select name="role_id" required>
+          {% for role in roles %}
+          <option value="{{ role.id }}" {{ 'selected' if role.id == edit_user.role_id else '' }}>{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Nueva contrasena <input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Dejar vacio para conservar"></label>
+      <label class="check"><input type="checkbox" name="is_active" value="1" {{ 'checked' if edit_user.is_active else '' }}> Usuario activo</label>
+      <div class="row">
+        <button class="primary" type="submit">Guardar cambios</button>
+        <a class="ghost btn" href="{{ url_for('admin.users') }}">Cancelar</a>
+      </div>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('admin.user_create') }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Usuario <input name="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._-]+" autocomplete="off"></label>
+      <label>Nombre completo <input name="full_name" maxlength="120"></label>
+      <label>Correo <input name="email" type="email" maxlength="160"></label>
+      <label>Rol
+        <select name="role_id" required>
+          {% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Contrasena inicial <input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label class="check"><input type="checkbox" name="is_active" value="1" checked> Usuario activo</label>
+      <button class="primary" type="submit">Crear usuario</button>
+    </form>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Buenas practicas</h2>
+    <ul class="check-list">
+      <li>Asigna el rol minimo necesario; el administrador conserva todos los permisos.</li>
+      <li>El acceso a cada tablero se concede en <strong>Accesos por tablero</strong>.</li>
+      <li>Un desarrollador necesita permiso <em>edit</em> para modificar un tablero.</li>
+      <li>Los cambios de usuarios, roles y accesos quedan en la auditoria.</li>
+      <li>Cambia las contrasenas iniciales despues del primer acceso.</li>
+    </ul>
+  </article>
+</div>
+
+<article class="panel">
+  <h2>Listado</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Ultimo acceso</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>
+            <strong>{{ user.username }}</strong>
+            <small class="muted">{{ user.full_name or "Sin nombre" }}{% if user.email %} · {{ user.email }}{% endif %}</small>
+          </td>
+          <td>{{ user.role_name }}</td>
+          <td><span class="badge {{ 'badge-ok' if user.is_active else 'badge-off' }}">{{ "Activo" if user.is_active else "Inactivo" }}</span></td>
+          <td>{{ user.last_login_at or "—" }}</td>
+          <td class="cell-actions">
+            <a class="ghost btn small" href="{{ url_for('admin.users', edit=user.id) }}">Editar</a>
+            {% if user.id != current_user.id %}
+            <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}" class="inline-form" onsubmit="return confirm('¿Eliminar este usuario?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="link danger small">Eliminar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+{% endblock %}

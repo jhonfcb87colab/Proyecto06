@@ -1,0 +1,61 @@
+{% extends "admin/layout.html" %}
+{% block title %}Accesos · BI Web{% endblock %}
+
+{% block admin %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Accesos</p>
+    <h1>Accesos por tablero</h1>
+    <p class="lead">Concede <strong>ver</strong> o <strong>editar</strong> cada tablero por usuario. Los administradores y roles con alcance global no necesitan asignacion.</p>
+  </div>
+  <span class="badge">{{ dashboards|length }} tablero(s)</span>
+</div>
+
+{% if not dashboards %}
+<article class="panel"><p class="empty">Todavia no hay tableros. Crea uno para asignar accesos.</p></article>
+{% else %}
+<form method="post" action="{{ url_for('admin.access_save') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <article class="panel">
+    <div class="table-wrap">
+      <table class="data-table access-table">
+        <thead>
+          <tr>
+            <th class="sticky-col">Usuario</th>
+            {% for dashboard in dashboards %}<th>{{ dashboard.name }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td class="sticky-col">
+              <strong>{{ user.username }}</strong>
+              <small class="muted">{{ user.role_name }}</small>
+            </td>
+            {% if user.role_slug == 'administrador' or 'dashboards.view_all' in user.permissions %}
+              {% for dashboard in dashboards %}<td><span class="badge badge-soft">Global</span></td>{% endfor %}
+            {% else %}
+              {% for dashboard in dashboards %}
+              {% set level = matrix.get((user.id, dashboard.id)) %}
+              <td>
+                <select name="access__{{ user.id }}__{{ dashboard.id }}" aria-label="{{ user.username }} en {{ dashboard.name }}">
+                  <option value="" {{ 'selected' if not level else '' }}>Sin acceso</option>
+                  <option value="view" {{ 'selected' if level == 'view' else '' }}>Ver</option>
+                  <option value="edit" {{ 'selected' if level == 'edit' else '' }}>Editar</option>
+                </select>
+              </td>
+              {% endfor %}
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="row">
+      <button class="primary" type="submit">Guardar accesos</button>
+      <p class="hint">Los cambios se registran en la auditoria.</p>
+    </div>
+  </article>
+</form>
+{% endif %}
+{% endblock %}
