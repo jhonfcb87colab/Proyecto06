@@ -17,6 +17,10 @@
     tablesConnection: null,
     pendingLayout: null,
     pendingModelId: null,
+    modelRelated: [],
+    widgetMeasureRelated: [],
+    modelExpanded: {},
+    widgetMeasureExpanded: {},
     loading: false,
     designPanel: "visualizations",
   };
@@ -28,6 +32,7 @@
   const canvas = $("#canvas");
   const shell = $("#shell");
   const panel = $("#design-panel");
+  const sampleCache = new Map();
 
   // ------------------------------------------------------------- utilidades
   let toastTimer = null;
@@ -120,6 +125,664 @@
     return datasets.find((d) => String(d.id) === String(datasetId)) || null;
   }
 
+  // ------------------------------------------------ contexto de medidas Python
+  function insertAtCursor(selector, text) {
+    const area = $(selector);
+    if (!area) return;
+    const start = area.selectionStart == null ? area.value.length : area.selectionStart;
+    const end = area.selectionEnd == null ? area.value.length : area.selectionEnd;
+    const before = area.value.slice(0, start);
+    const after = area.value.slice(end);
+    const pad = before && !/\s$/.test(before) ? " " : "";
+    area.value = before + pad + text + after;
+    const cursor = (before + pad + text).length;
+    area.focus();
+    area.setSelectionRange(cursor, cursor);
+    area.dispatchEvent(new Event("input"));
+  }
+
+  function insertMeasureSnippet(text) {
+    insertAtCursor("#w-measure-expression", text);
+  }
+
+  function insertModelSnippet(text) {
+    insertAtCursor("#model-expression", text);
+  }
+
+  const JOIN_TYPES = ["inner", "left", "right", "outer"];
+
+  function normalizeJoinType(value) {
+    const how = String(value || "inner").toLowerCase();
+    return JOIN_TYPES.includes(how) ? how : "inner";
+  }
+
+  function normalizeRelatedTables(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const usedAliases = new Set();
+    raw.forEach((entry) => {
+      const id = entry && typeof entry === "object" ? entry.id : entry;
+      const numericId = Number(id);
+      if (!Number.isFinite(numericId) || numericId <= 0) return;
+      let alias = entry && typeof entry === "object" ? String(entry.alias || "") : "";
+      if (!/^t(?:[2-9]|[1-9]\d+)$/.test(alias) || usedAliases.has(alias)) {
+        alias = "";
+      }
+      if (!alias) {
+        let number = 2;
+        while (usedAliases.has("t" + number)) number += 1;
+        alias = "t" + number;
+      }
+      usedAliases.add(alias);
+      out.push({
+        id: numericId,
+        alias: alias,
+        left_key: entry && typeof entry === "object" ? String(entry.left_key || entry.primary_key || "") : "",
+        right_key: entry && typeof entry === "object" ? String(entry.right_key || entry.related_key || "") : "",
+        how: normalizeJoinType(entry && typeof entry === "object" ? entry.how || entry.join : "inner"),
+      });
+    });
+    return out;
+  }
+
+  function nextRelatedAlias(related) {
+    const used = new Set((related || []).map((item) => item.alias));
+    let number = 2;
+    while (used.has("t" + number)) number += 1;
+    return "t" + number;
+  }
+
+  function relatedAliasFor(related, datasetId) {
+    const found = (related || []).find((item) => String(item.id) === String(datasetId));
+    return found ? found.alias : "";
+  }
+
+  function relatedEntryFor(related, datasetId) {
+    return (related || []).find((item) => String(item.id) === String(datasetId)) || null;
+  }
+
+  function commonJoinKeys(primaryId, relatedId) {
+    const primaryFields = datasetFields(primaryId) || [];
+    const relatedFields = datasetFields(relatedId) || [];
+    const relatedNames = new Set(relatedFields.map((field) => field.name));
+    const common = primaryFields.filter((field) => relatedNames.has(field.name));
+    const preferred = ["id", "codigo", "code", "clave", "key", "cliente_id", "customer_id"];
+    const preferredMatch = common.find((field) => preferred.includes(String(field.name).toLowerCase()));
+    const chosen = preferredMatch || common[0];
+    return chosen ? { left_key: chosen.name, right_key: chosen.name } : { left_key: "", right_key: "" };
+  }
+
+  function withJoinDefaults(primaryId, related) {
+    return (related || []).map((entry) => {
+      if (entry.left_key || entry.right_key) {
+        return Object.assign({}, entry, {
+          left_key: entry.left_key || entry.right_key,
+          right_key: entry.right_key || entry.left_key,
+        });
+      }
+      return Object.assign({}, entry, commonJoinKeys(primaryId, entry.id));
+    });
+  }
+
+  function setRelatedSelection(related, primaryId, datasetId, selected) {
+    const current = related || [];
+    const exists = current.some((item) => String(item.id) === String(datasetId));
+    if (selected && !exists) {
+      const keys = commonJoinKeys(primaryId, datasetId);
+      return current.concat([
+        {
+          id: Number(datasetId),
+          alias: nextRelatedAlias(current),
+          left_key: keys.left_key,
+          right_key: keys.right_key,
+          how: "inner",
+        },
+      ]);
+    }
+    if (!selected && exists) {
+      return current.filter((item) => String(item.id) !== String(datasetId));
+    }
+    return current;
+  }
+
+  function updateRelatedJoin(related, datasetId, patch) {
+    return (related || []).map((item) => {
+      if (String(item.id) !== String(datasetId)) return item;
+      return Object.assign({}, item, patch || {});
+    });
+  }
+
+  function joinExpression(entry, source) {
+    if (!entry) return null;
+    const left = String(entry.left_key || entry.right_key || "").trim();
+    const right = String(entry.right_key || entry.left_key || "").trim();
+    if (!left || !right) return null;
+    const args = [source || "rows", entry.alias, JSON.stringify(left), JSON.stringify(right)];
+    const how = normalizeJoinType(entry.how);
+    if (how !== "inner") args.push(JSON.stringify(how));
+    return "merge(" + args.join(", ") + ")";
+  }
+
+  function chainedJoinExpression(related, source) {
+    let expression = source || "rows";
+    let applied = 0;
+    (related || []).forEach((entry) => {
+      const next = joinExpression(entry, expression);
+      if (!next) return;
+      expression = next;
+      applied += 1;
+    });
+    return applied ? expression : null;
+  }
+
+  function relatedConfig(related) {
+    return (related || []).map((item) => ({
+      id: item.id,
+      alias: item.alias,
+      left_key: item.left_key || "",
+      right_key: item.right_key || "",
+      how: normalizeJoinType(item.how),
+    }));
+  }
+
+  function modelTableSources(primaryId, related) {
+    const sources = [];
+    const primary = datasetById(primaryId);
+    if (primary) sources.push({ dataset: primary, alias: "rows", primary: true });
+    (related || []).forEach((item) => {
+      if (String(item.id) === String(primaryId)) return;
+      const dataset = datasetById(item.id);
+      if (dataset) sources.push({ dataset: dataset, alias: item.alias, primary: false });
+    });
+    return sources;
+  }
+
+  function parseQuickFieldValue(value) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed) && parsed.length === 2) {
+        return { alias: String(parsed[0]), field: String(parsed[1]) };
+      }
+    } catch (err) {
+      // compatibilidad con valores simples anteriores
+    }
+    return { alias: "rows", field: value == null ? "" : String(value) };
+  }
+
+  function fillQuickFieldSelect(select, sources) {
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML = "";
+    const usable = (sources || []).filter((source) => (source.dataset.fields || []).length);
+    if (!usable.length) {
+      select.appendChild(option("", "Sin campos", ""));
+      return;
+    }
+    usable.forEach((source) => {
+      const group = document.createElement("optgroup");
+      group.label = (source.primary ? "Principal" : source.alias) + " · " + source.dataset.name;
+      (source.dataset.fields || []).forEach((field) => {
+        const value = JSON.stringify([source.alias, field.name]);
+        group.appendChild(option(value, field.name + " (" + (field.type || "text") + ")", previous));
+      });
+      select.appendChild(group);
+    });
+    if (!select.value && select.options.length) select.selectedIndex = 0;
+  }
+
+  function renderTableTree(container, options) {
+    if (!container) return;
+    const settings = options || {};
+    const datasets = (state.data && state.data.datasets) || [];
+    const primaryId = settings.primaryId == null ? "" : String(settings.primaryId);
+    const primaryExists = datasets.some((dataset) => String(dataset.id) === primaryId);
+    const related = settings.related || [];
+    const expanded = settings.expanded || {};
+    container.innerHTML = "";
+    if (settings.focusEl) {
+      const previousFocus = settings.focusEl.value;
+      settings.focusEl.innerHTML = "";
+      settings.focusEl.appendChild(option("", "Todas las tablas", ""));
+      datasets.forEach((dataset) => {
+        settings.focusEl.appendChild(option(dataset.id, dataset.name, previousFocus));
+      });
+    }
+    if (!primaryExists) {
+      container.innerHTML = '<p class="hint">Selecciona un dataset principal para ver las tablas y columnas.</p>';
+      if (settings.metaEl) settings.metaEl.textContent = "Sin tablas";
+      return;
+    }
+    datasets.forEach((dataset) => {
+      const isPrimary = String(dataset.id) === primaryId;
+      const relatedAlias = relatedAliasFor(related, dataset.id);
+      const selected = isPrimary || Boolean(relatedAlias);
+      const alias = isPrimary ? "t1" : relatedAlias;
+      const expandedKey = String(dataset.id);
+      const startsOpen = Object.prototype.hasOwnProperty.call(expanded, expandedKey)
+        ? Boolean(expanded[expandedKey])
+        : selected;
+      const node = document.createElement("div");
+      node.dataset.datasetId = String(dataset.id);
+      node.className = "table-node" + (selected ? " selected" : "") + (isPrimary ? " primary" : "");
+      const head = document.createElement("div");
+      head.className = "table-node-head";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.checked = selected;
+      check.disabled = isPrimary;
+      check.setAttribute("aria-label", "Usar tabla " + dataset.name);
+      check.addEventListener("change", () => {
+        expanded[expandedKey] = true;
+        if (settings.onToggle) settings.onToggle(dataset.id, check.checked);
+      });
+      head.appendChild(check);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "tree-toggle";
+      toggle.setAttribute("aria-expanded", startsOpen ? "true" : "false");
+      toggle.textContent = startsOpen ? "▾" : "▸";
+      head.appendChild(toggle);
+      const title = document.createElement("span");
+      title.className = "table-node-title";
+      title.textContent = dataset.name;
+      head.appendChild(title);
+      const badges = document.createElement("span");
+      badges.className = "table-node-badges";
+      if (alias) {
+        const aliasBadge = document.createElement("span");
+        aliasBadge.className = "alias-badge";
+        aliasBadge.textContent = alias === "t1" ? "rows · t1" : alias;
+        badges.appendChild(aliasBadge);
+      }
+      const fields = dataset.fields || [];
+      const fieldBadge = document.createElement("span");
+      fieldBadge.className = "id-badge";
+      fieldBadge.textContent = fields.length + " col.";
+      badges.appendChild(fieldBadge);
+      head.appendChild(badges);
+      if (selected) {
+        const use = document.createElement("button");
+        use.type = "button";
+        use.className = "link tree-use";
+        use.textContent = "Insertar tabla";
+        use.addEventListener("click", () => {
+          if (settings.onInsert) settings.onInsert(alias === "t1" ? "rows" : alias);
+        });
+        head.appendChild(use);
+      }
+      node.appendChild(head);
+      const columns = document.createElement("div");
+      columns.className = "table-columns";
+      if (!fields.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "Sin columnas detectadas.";
+        columns.appendChild(empty);
+      }
+      fields.forEach((field) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "table-column type-" + (field.type || "text");
+        button.innerHTML = "<span>" + esc(field.name) + "</span><small>" + esc(field.type || "text") + "</small>";
+        button.title =
+          "Insertar \"" +
+          field.name +
+          "\" de " +
+          (alias === "t1" ? "rows" : alias);
+        button.addEventListener("click", () => {
+          if (settings.onInsert) settings.onInsert(JSON.stringify(field.name));
+        });
+        columns.appendChild(button);
+      });
+      columns.hidden = !startsOpen;
+      const setOpen = (open) => {
+        columns.hidden = !open;
+        toggle.textContent = open ? "▾" : "▸";
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        expanded[expandedKey] = open;
+      };
+      toggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setOpen(columns.hidden);
+      });
+      head.addEventListener("click", (event) => {
+        if (event.target.closest("input, button, a")) return;
+        setOpen(columns.hidden);
+      });
+      node.appendChild(columns);
+      container.appendChild(node);
+    });
+    if (settings.metaEl) {
+      const count = 1 + related.filter((item) => datasets.some((dataset) => String(dataset.id) === String(item.id))).length;
+      settings.metaEl.textContent = count + (count === 1 ? " tabla" : " tablas");
+    }
+  }
+
+  function focusTable(containerSelector, datasetId) {
+    const container = $(containerSelector);
+    if (!container || !datasetId) return;
+    const node = container.querySelector('[data-dataset-id="' + CSS.escape(String(datasetId)) + '"]');
+    if (!node) return;
+    const toggle = node.querySelector(".tree-toggle");
+    const columns = node.querySelector(".table-columns");
+    if (toggle && columns && columns.hidden) toggle.click();
+    node.classList.add("tree-focus");
+    node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    setTimeout(() => node.classList.remove("tree-focus"), 1400);
+  }
+
+  function renderJoinEditor(container, options) {
+    if (!container) return;
+    const settings = options || {};
+    const primaryId = settings.primaryId;
+    const related = settings.related || [];
+    const primary = datasetById(primaryId);
+    const currentRelated = () => (settings.getRelated ? settings.getRelated() : related);
+    container.innerHTML = "";
+    if (!primary || !related.length) return;
+    const head = document.createElement("div");
+    head.className = "join-head";
+    head.innerHTML = "<span>Cruces configurados</span>";
+    container.appendChild(head);
+    related.forEach((entry) => {
+      const dataset = datasetById(entry.id);
+      if (!dataset) return;
+      const card = document.createElement("div");
+      card.className = "join-card";
+      const cardHead = document.createElement("div");
+      cardHead.className = "join-card-head";
+      cardHead.innerHTML =
+        '<span class="alias-badge">' +
+        esc(entry.alias) +
+        "</span><span>" +
+        esc(dataset.name) +
+        "</span><small class=\"hint\">" +
+        (dataset.fields || []).length +
+        " columnas</small>";
+      card.appendChild(cardHead);
+      const grid = document.createElement("div");
+      grid.className = "join-grid";
+      const left = document.createElement("label");
+      left.appendChild(document.createTextNode("Llave en tabla principal"));
+      left.appendChild(
+        fieldSelect(
+          (primary.fields || []).map((field) => field.name),
+          entry.left_key,
+          "Selecciona llave",
+          (value) => settings.onChange && settings.onChange(entry.id, { left_key: value })
+        )
+      );
+      const right = document.createElement("label");
+      right.appendChild(document.createTextNode("Llave en " + entry.alias));
+      right.appendChild(
+        fieldSelect(
+          (dataset.fields || []).map((field) => field.name),
+          entry.right_key,
+          "Selecciona llave",
+          (value) => settings.onChange && settings.onChange(entry.id, { right_key: value })
+        )
+      );
+      const how = document.createElement("label");
+      how.appendChild(document.createTextNode("Tipo de cruce"));
+      const howSelect = document.createElement("select");
+      [
+        ["inner", "Interior"],
+        ["left", "Izquierda"],
+        ["right", "Derecha"],
+        ["outer", "Exterior"],
+      ].forEach((pair) => howSelect.appendChild(option(pair[0], pair[1], entry.how)));
+      howSelect.addEventListener("change", () => {
+        if (settings.onChange) settings.onChange(entry.id, { how: howSelect.value });
+      });
+      how.appendChild(howSelect);
+      grid.appendChild(left);
+      grid.appendChild(right);
+      grid.appendChild(how);
+      card.appendChild(grid);
+      const actions = document.createElement("div");
+      actions.className = "join-actions";
+      const insert = document.createElement("button");
+      insert.type = "button";
+      insert.className = "link";
+      insert.textContent = "Insertar este cruce";
+      insert.addEventListener("click", () => {
+        const latest = relatedEntryFor(currentRelated(), entry.id) || entry;
+        const expression = joinExpression(latest);
+        if (!expression) {
+          toast("Elige la llave de la tabla principal y la de " + entry.alias, "error");
+          return;
+        }
+        if (settings.onInsert) settings.onInsert(expression);
+      });
+      actions.appendChild(insert);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "link danger";
+      remove.textContent = "Quitar tabla";
+      remove.addEventListener("click", () => {
+        if (settings.onRemove) settings.onRemove(entry.id);
+      });
+      actions.appendChild(remove);
+      card.appendChild(actions);
+      container.appendChild(card);
+    });
+    const bulk = document.createElement("button");
+    bulk.type = "button";
+    bulk.className = "ghost";
+    bulk.textContent = "Insertar cruce encadenado (" + related.length + " tabla(s))";
+    bulk.addEventListener("click", () => {
+      const expression = chainedJoinExpression(currentRelated());
+      if (!expression) {
+        toast("Configura las llaves de las tablas para generar el cruce", "error");
+        return;
+      }
+      if (settings.onInsert) settings.onInsert(expression);
+    });
+    container.appendChild(bulk);
+  }
+
+  function fieldSelect(names, value, placeholder, onChange) {
+    const select = document.createElement("select");
+    select.appendChild(option("", placeholder, ""));
+    (names || []).forEach((name) => select.appendChild(option(name, name, value)));
+    select.value = value || "";
+    select.addEventListener("change", () => onChange(select.value));
+    return select;
+  }
+
+  function renderMeasureSample(data) {
+    const box = $("#w-measure-sample");
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = "";
+    const caption = document.createElement("p");
+    caption.className = "hint";
+    caption.textContent =
+      "Muestra del dataframe: " +
+      (data.rows ? data.rows.length : 0) +
+      " fila(s)" +
+      (data.truncated ? " (vista limitada)" : "");
+    box.appendChild(caption);
+    const table = document.createElement("div");
+    box.appendChild(table);
+    window.BICharts.render(table, {
+      type: "table",
+      columns: data.columns || [],
+      rows: data.rows || [],
+      format: { format: "number", decimals: 2 },
+      truncated: false,
+    });
+  }
+
+  function loadMeasureSample(datasetId) {
+    const box = $("#w-measure-sample");
+    if (!box) return;
+    if (!datasetId) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const key = String(datasetId);
+    if (sampleCache.has(key)) {
+      renderMeasureSample(sampleCache.get(key));
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = '<p class="hint">Cargando muestra del dataframe...</p>';
+    api("/api/datasets/" + encodeURIComponent(key) + "/sample?limit=4")
+      .then((data) => {
+        sampleCache.set(key, data);
+        if ($("#w-dataset") && String($("#w-dataset").value) === key) renderMeasureSample(data);
+      })
+      .catch((err) => {
+        if ($("#w-dataset") && String($("#w-dataset").value) !== key) return;
+        box.innerHTML = '<p class="hint">No se pudo cargar la muestra: ' + esc(err.message) + "</p>";
+      });
+  }
+
+  function relatedSummary(related) {
+    if (!related || !related.length) {
+      return "Marca tablas adicionales para cruzarlas. Al desplegar cada tabla veras sus columnas.";
+    }
+    return (
+      "Tablas cruzadas: " +
+      related
+        .map((item) => {
+          const relatedDataset = datasetById(item.id);
+          return item.alias + " = " + (relatedDataset ? relatedDataset.name : item.id);
+        })
+        .join(", ") +
+      ". Usa esos alias en la expresion."
+    );
+  }
+
+  function renderMeasureContext() {
+    const name = $("#w-measure-dataset-name");
+    const meta = $("#w-measure-dataset-meta");
+    const tree = $("#w-measure-tables");
+    const hint = $("#w-measure-fields-hint");
+    if (!name || !meta || !tree || !hint) return;
+    const datasetId = $("#w-dataset") ? $("#w-dataset").value : "";
+    const dataset = datasetById(datasetId);
+    if (!dataset) {
+      name.textContent = "Sin dataset";
+      meta.textContent = "Sin campos";
+      tree.innerHTML = '<p class="hint">Selecciona un dataset principal para ver tablas y columnas.</p>';
+      hint.textContent = "Selecciona un dataset para ver sus campos.";
+      const focus = $("#w-measure-table-focus");
+      if (focus) focus.innerHTML = "";
+      const joins = $("#w-measure-joins");
+      if (joins) joins.innerHTML = "";
+      fillQuickFieldSelect($("#w-quick-field"), []);
+      loadMeasureSample(null);
+      return;
+    }
+    const filtered = state.widgetMeasureRelated.filter((item) => String(item.id) !== String(datasetId));
+    state.widgetMeasureRelated = withJoinDefaults(datasetId, filtered);
+    const related = state.widgetMeasureRelated;
+    const sources = modelTableSources(datasetId, related);
+    const fields = dataset.fields || [];
+    name.textContent = dataset.name;
+    meta.textContent = fields.length + " campos · " + (1 + related.length) + " tabla(s)";
+    renderTableTree(tree, {
+      primaryId: datasetId,
+      related: related,
+      expanded: state.widgetMeasureExpanded,
+      focusEl: $("#w-measure-table-focus"),
+      onToggle: (id, selected) => {
+        state.widgetMeasureRelated = setRelatedSelection(
+          state.widgetMeasureRelated,
+          datasetId,
+          id,
+          selected
+        );
+        renderMeasureContext();
+      },
+      onInsert: (text) => insertMeasureSnippet(text),
+    });
+    hint.textContent = relatedSummary(related);
+    renderJoinEditor($("#w-measure-joins"), {
+      primaryId: datasetId,
+      related: related,
+      getRelated: () => state.widgetMeasureRelated,
+      onChange: (id, patch) => {
+        state.widgetMeasureRelated = updateRelatedJoin(state.widgetMeasureRelated, id, patch);
+        hint.textContent = relatedSummary(state.widgetMeasureRelated);
+      },
+      onRemove: (id) => {
+        state.widgetMeasureRelated = setRelatedSelection(
+          state.widgetMeasureRelated,
+          datasetId,
+          id,
+          false
+        );
+        renderMeasureContext();
+      },
+      onInsert: (text) => insertMeasureSnippet(text),
+    });
+    fillQuickFieldSelect($("#w-quick-field"), sources);
+    loadMeasureSample(datasetId);
+  }
+
+  function insertWidgetQuickMeasure() {
+    const parsed = parseQuickFieldValue($("#w-quick-field") ? $("#w-quick-field").value : "");
+    const field = parsed.field;
+    const op = $("#w-quick-op") ? $("#w-quick-op").value : "sum";
+    if (!field) {
+      toast("Elige un campo del dataframe", "error");
+      return;
+    }
+    const functions = {
+      sum: "sum_field",
+      avg: "avg_field",
+      count: "count_field",
+      count_distinct: "distinct_field",
+      min: "min_field",
+      max: "max_field",
+      median: "median_field",
+      stdev: "stdev_field",
+    };
+    const tableVar = parsed.alias || "rows";
+    const expression = (functions[op] || functions.sum) + "(" + tableVar + ", " + JSON.stringify(field) + ")";
+    const area = $("#w-measure-expression");
+    if (area) {
+      area.value = expression;
+      area.focus();
+      area.setSelectionRange(expression.length, expression.length);
+    }
+    if ($("#w-measure-kind")) $("#w-measure-kind").value = "measure";
+    if ($("#w-measure-name") && !$("#w-measure-name").value.trim()) {
+      $("#w-measure-name").value = op + " " + field + (tableVar !== "rows" ? " · " + tableVar : "");
+    }
+    toast("Expresion insertada");
+  }
+
+  function positionMeasureTooltip() {
+    const button = $("#w-measure-help");
+    const tip = $("#w-measure-tooltip");
+    if (!button || !tip || tip.hidden) return;
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(340, window.innerWidth - 24);
+    tip.style.maxWidth = width + "px";
+    let left = rect.right - width;
+    left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
+    let top = rect.bottom + 8;
+    if (top + tip.offsetHeight > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - tip.offsetHeight - 8);
+    }
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+
+  function setMeasureTooltip(open) {
+    const button = $("#w-measure-help");
+    const tip = $("#w-measure-tooltip");
+    if (!button || !tip) return;
+    tip.hidden = !open;
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) positionMeasureTooltip();
+  }
+
   function modelItemsFor(datasetId) {
     const items = (state.data && state.data.model_items) || [];
     if (!datasetId) return items;
@@ -187,6 +850,7 @@
   // ------------------------------------------------------------------- load
   async function load(silent) {
     if (!dashboardId) return;
+    if (!silent) sampleCache.clear();
     state.loading = true;
     try {
       const path =
@@ -1235,6 +1899,7 @@
     restoreValue($("#w-lon"), previous.lon);
     restoreValue($("#w-model"), previous.model);
     applyChartTypeUI();
+    renderMeasureContext();
   }
 
   function restoreValue(select, value) {
@@ -1284,6 +1949,8 @@
   function fillWidgetForm(widget) {
     setDesignPanel("visualizations");
     state.editingWidget = widget.id;
+    state.widgetMeasureRelated = [];
+    state.widgetMeasureExpanded = {};
     $("#w-id").value = widget.id;
     $("#w-title").value = widget.title || "";
     $("#w-dataset").value = widget.dataset_id || "";
@@ -1326,6 +1993,8 @@
 
   function resetWidgetForm() {
     state.editingWidget = null;
+    state.widgetMeasureRelated = [];
+    state.widgetMeasureExpanded = {};
     const form = $("#w-form");
     if (form) form.reset();
     $("#w-id").value = "";
@@ -1426,7 +2095,10 @@
         dataset_id: datasetId,
         name: name,
         expression: expression,
-        config: { name: name },
+        config: {
+          name: name,
+          tables: relatedConfig(state.widgetMeasureRelated),
+        },
       },
     })
       .then((row) => {
@@ -1515,13 +2187,43 @@
     if (!datasetValue && datasets.length) $("#model-dataset").value = String(datasets[0].id);
     else restoreValue($("#model-dataset"), datasetValue);
     const datasetId = $("#model-dataset").value;
-    const fields = datasetFields(datasetId).map((f) => ({
-      value: f.name,
-      label: f.name + " (" + f.type + ")",
-    }));
-    const quickValue = $("#quick-field").value;
-    fillSelect($("#quick-field"), fields, { placeholder: fields.length ? null : "Sin campos" });
-    restoreValue($("#quick-field"), quickValue);
+    const filtered = state.modelRelated.filter((item) => String(item.id) !== String(datasetId));
+    state.modelRelated = withJoinDefaults(datasetId, filtered);
+    const sources = modelTableSources(datasetId, state.modelRelated);
+    const tableHint = $("#model-table-hint");
+    renderTableTree($("#model-table-tree"), {
+      primaryId: datasetId,
+      related: state.modelRelated,
+      expanded: state.modelExpanded,
+      focusEl: $("#model-table-focus"),
+      metaEl: $("#model-tables-meta"),
+      onToggle: (id, selected) => {
+        state.modelRelated = setRelatedSelection(
+          state.modelRelated,
+          datasetId,
+          id,
+          selected
+        );
+        renderModelFormOptions();
+      },
+      onInsert: (text) => insertModelSnippet(text),
+    });
+    if (tableHint) tableHint.textContent = relatedSummary(state.modelRelated);
+    renderJoinEditor($("#model-joins"), {
+      primaryId: datasetId,
+      related: state.modelRelated,
+      getRelated: () => state.modelRelated,
+      onChange: (id, patch) => {
+        state.modelRelated = updateRelatedJoin(state.modelRelated, id, patch);
+        if (tableHint) tableHint.textContent = relatedSummary(state.modelRelated);
+      },
+      onRemove: (id) => {
+        state.modelRelated = setRelatedSelection(state.modelRelated, datasetId, id, false);
+        renderModelFormOptions();
+      },
+      onInsert: (text) => insertModelSnippet(text),
+    });
+    fillQuickFieldSelect($("#quick-field"), sources);
     applyModelKindUI();
   }
 
@@ -1535,6 +2237,8 @@
     }
     const expression = $("#model-expression");
     if (expression) expression.disabled = created;
+    const tablesPanel = $("#model-tables-panel");
+    if (tablesPanel) tablesPanel.hidden = created;
     if ($("#quick-add")) $("#quick-add").disabled = !$("#quick-field").value || created;
   }
 
@@ -1549,15 +2253,18 @@
     }
     items.forEach((item) => {
       const ds = datasetById(item.dataset_id);
+      const config = item.config || {};
+      const relatedCount = Array.isArray(config.tables) ? config.tables.length : 0;
       const row = document.createElement("div");
       row.className = "list-item model-item";
-      const expr = item.expression ? item.expression.slice(0, 90) : JSON.stringify(item.config || {});
+      const expr = item.expression ? item.expression.slice(0, 90) : JSON.stringify(config);
       row.innerHTML =
         '<div class="list-main"><strong>' +
         esc(item.name) +
         '</strong><small>' +
         esc(modelKindLabel(item.kind)) +
         (ds ? " · " + esc(ds.name) : "") +
+        (relatedCount ? " · +" + relatedCount + " tabla(s)" : "") +
         "</small><code>" +
         esc(expr) +
         "</code></div>" +
@@ -1600,12 +2307,16 @@
       if (!Array.isArray(rows)) throw new Error("Las filas deben ser un arreglo JSON");
       config.columns = columns;
       config.rows = rows;
+    } else {
+      config.tables = relatedConfig(state.modelRelated);
     }
     return { kind: kind, dataset_id: Number(datasetId), name: name, expression: expression, config: config };
   }
 
   function resetModelForm() {
     state.editingModel = null;
+    state.modelRelated = [];
+    state.modelExpanded = {};
     const form = $("#model-form");
     if (form) form.reset();
     $("#model-id").value = "";
@@ -1626,10 +2337,11 @@
     renderModelFormOptions();
     $("#model-kind").value = item.kind;
     $("#model-dataset").value = item.dataset_id || "";
+    const config = item.config || {};
+    state.modelRelated = normalizeRelatedTables(config.tables);
     renderModelFormOptions();
     $("#model-name").value = item.name || "";
     $("#model-expression").value = item.expression || "";
-    const config = item.config || {};
     $("#model-columns").value = (config.columns || []).join(", ");
     $("#model-rows").value = config.rows ? JSON.stringify(config.rows, null, 2) : "";
     applyModelKindUI();
@@ -1652,6 +2364,36 @@
       (result.source_rows != null ? result.source_rows : "—") +
       (result.source_truncated ? " (truncado)" : "");
     out.appendChild(summary);
+    if (result.model_tables && result.model_tables.length) {
+      const tables = document.createElement("p");
+      tables.className = "hint";
+      tables.textContent =
+        "Tablas usadas: " +
+        result.model_tables
+          .map((item) => {
+            const join =
+              item.primary || !item.left_key
+                ? ""
+                : " · cruce " +
+                  (item.how || "inner") +
+                  " [" +
+                  item.left_key +
+                  " → " +
+                  (item.right_key || item.left_key) +
+                  "]";
+            return (
+              item.alias +
+              " = " +
+              item.name +
+              " (" +
+              (item.rows != null ? item.rows : "—") +
+              " filas)" +
+              join
+            );
+          })
+          .join(" · ");
+      out.appendChild(tables);
+    }
     if (result.kind === "measure") {
       const value = document.createElement("div");
       value.className = "model-value";
@@ -1674,26 +2416,31 @@
   }
 
   function insertQuickMeasure() {
-    const field = $("#quick-field").value;
+    const parsed = parseQuickFieldValue($("#quick-field").value);
+    const field = parsed.field;
     const op = $("#quick-op").value;
     if (!field) {
       toast("Elige un campo para la medida rapida", "error");
       return;
     }
     const quoted = JSON.stringify(field);
+    const tableVar = parsed.alias || "rows";
     const expressions = {
-      sum: "sum_field(rows, " + quoted + ")",
-      avg: "avg_field(rows, " + quoted + ")",
-      count: "count_field(rows, " + quoted + ")",
-      count_distinct: "distinct_field(rows, " + quoted + ")",
-      min: "min_field(rows, " + quoted + ")",
-      max: "max_field(rows, " + quoted + ")",
-      median: "median_field(rows, " + quoted + ")",
+      sum: "sum_field(" + tableVar + ", " + quoted + ")",
+      avg: "avg_field(" + tableVar + ", " + quoted + ")",
+      count: "count_field(" + tableVar + ", " + quoted + ")",
+      count_distinct: "distinct_field(" + tableVar + ", " + quoted + ")",
+      min: "min_field(" + tableVar + ", " + quoted + ")",
+      max: "max_field(" + tableVar + ", " + quoted + ")",
+      median: "median_field(" + tableVar + ", " + quoted + ")",
+      stdev: "stdev_field(" + tableVar + ", " + quoted + ")",
     };
     $("#model-kind").value = "measure";
     applyModelKindUI();
     $("#model-expression").value = expressions[op] || expressions.sum;
-    if (!$("#model-name").value.trim()) $("#model-name").value = op + " " + field;
+    if (!$("#model-name").value.trim()) {
+      $("#model-name").value = op + " " + field + (tableVar !== "rows" ? " · " + tableVar : "");
+    }
     toast("Medida rapida insertada");
   }
 
@@ -2126,7 +2873,13 @@
 
     // widgets
     const wDataset = $("#w-dataset");
-    if (wDataset) wDataset.addEventListener("change", () => renderWidgetFormOptions());
+    if (wDataset) {
+      wDataset.addEventListener("change", () => {
+        state.widgetMeasureRelated = [];
+        state.widgetMeasureExpanded = {};
+        renderWidgetFormOptions();
+      });
+    }
     const wChart = $("#w-chart");
     if (wChart) wChart.addEventListener("change", applyChartTypeUI);
     const wModel = $("#w-model");
@@ -2159,6 +2912,28 @@
 
     const measureCreate = $("#w-measure-create");
     if (measureCreate) measureCreate.addEventListener("click", createWidgetMeasure);
+
+    const measureHelp = $("#w-measure-help");
+    if (measureHelp) {
+      measureHelp.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const tip = $("#w-measure-tooltip");
+        setMeasureTooltip(tip ? tip.hidden : false);
+      });
+    }
+    const widgetQuickAdd = $("#w-quick-add");
+    if (widgetQuickAdd) widgetQuickAdd.addEventListener("click", insertWidgetQuickMeasure);
+    document.addEventListener("click", (event) => {
+      const tip = $("#w-measure-tooltip");
+      if (!tip || tip.hidden) return;
+      if (tip.contains(event.target) || (measureHelp && measureHelp.contains(event.target))) return;
+      setMeasureTooltip(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") setMeasureTooltip(false);
+    });
+    window.addEventListener("resize", positionMeasureTooltip);
+    window.addEventListener("scroll", positionMeasureTooltip, true);
 
     // importacion: tablas, archivos y scripts
     const impConnection = $("#imp-connection");
@@ -2341,8 +3116,22 @@
     const modelDataset = $("#model-dataset");
     if (modelDataset) {
       modelDataset.addEventListener("change", () => {
+        state.modelRelated = [];
+        state.modelExpanded = {};
         renderModelFormOptions();
         if (!$("[data-tools-pane=profile]").hidden) loadProfile();
+      });
+    }
+    const modelTableFocus = $("#model-table-focus");
+    if (modelTableFocus) {
+      modelTableFocus.addEventListener("change", () => {
+        focusTable("#model-table-tree", modelTableFocus.value);
+      });
+    }
+    const measureTableFocus = $("#w-measure-table-focus");
+    if (measureTableFocus) {
+      measureTableFocus.addEventListener("change", () => {
+        focusTable("#w-measure-tables", measureTableFocus.value);
       });
     }
     const quickField = $("#quick-field");

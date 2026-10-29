@@ -162,6 +162,129 @@ def limit_rows(rows: list[dict], count: int = 100) -> list[dict]:
     return list(rows)[: max(0, int(count))]
 
 
+def _merge_key(row: dict, field_name: str) -> Any:
+    value = row.get(field_name)
+    try:
+        hash(value)
+    except TypeError:
+        return str(value)
+    return value
+
+
+def _merge_row(
+    left_row: dict | None,
+    right_row: dict | None,
+    left_key: str | None,
+    right_key: str | None,
+) -> dict:
+    out = dict(left_row or {})
+    for key, value in (right_row or {}).items():
+        if right_row is not None and key == right_key and key == left_key:
+            continue
+        target = key
+        if target in out:
+            base = f"{key}_right"
+            target = base
+            suffix = 2
+            while target in out:
+                target = f"{base}{suffix}"
+                suffix += 1
+        out[target] = value
+    return out
+
+
+def merge(
+    left: list[dict],
+    right: list[dict],
+    left_key: str,
+    right_key: str | None = None,
+    how: str = "inner",
+) -> list[dict]:
+    """Cruza dos tablas por una llave y devuelve una lista de filas."""
+    if not isinstance(left, list) or not isinstance(right, list):
+        raise ValueError("merge espera dos listas de filas")
+    mode = str(how or "inner").strip().lower()
+    if mode not in {"inner", "left", "right", "outer"}:
+        raise ValueError("how debe ser inner, left, right u outer")
+    right_key = right_key or left_key
+    index: dict[Any, list[tuple[int, dict]]] = {}
+    for position, row in enumerate(right):
+        if not isinstance(row, dict):
+            continue
+        key = _merge_key(row, right_key)
+        if key is not None:
+            index.setdefault(key, []).append((position, row))
+    matched: set[int] = set()
+    out: list[dict] = []
+    for left_row in left:
+        if not isinstance(left_row, dict):
+            continue
+        key = _merge_key(left_row, left_key)
+        matches = index.get(key, []) if key is not None else []
+        if matches:
+            for position, right_row in matches:
+                matched.add(position)
+                out.append(_merge_row(left_row, right_row, left_key, right_key))
+        elif mode in {"left", "outer"}:
+            out.append(_merge_row(left_row, None, left_key, right_key))
+    if mode in {"right", "outer"}:
+        for position, right_row in enumerate(right):
+            if position in matched or not isinstance(right_row, dict):
+                continue
+            out.append(_merge_row(None, right_row, left_key, right_key))
+    return out
+
+
+def inner_join(left: list[dict], right: list[dict], left_key: str, right_key: str | None = None) -> list[dict]:
+    """Atajo de merge con cruce interior."""
+    return merge(left, right, left_key, right_key, "inner")
+
+
+def left_join(left: list[dict], right: list[dict], left_key: str, right_key: str | None = None) -> list[dict]:
+    """Atajo de merge conservando todas las filas de la tabla izquierda."""
+    return merge(left, right, left_key, right_key, "left")
+
+
+def right_join(left: list[dict], right: list[dict], left_key: str, right_key: str | None = None) -> list[dict]:
+    """Atajo de merge conservando todas las filas de la tabla derecha."""
+    return merge(left, right, left_key, right_key, "right")
+
+
+def outer_join(left: list[dict], right: list[dict], left_key: str, right_key: str | None = None) -> list[dict]:
+    """Atajo de merge con cruce exterior completo."""
+    return merge(left, right, left_key, right_key, "outer")
+
+
+def append_rows(*tables: list[dict]) -> list[dict]:
+    """Une verticalmente varias tablas en una sola lista de filas."""
+    out: list[dict] = []
+    for index, table in enumerate(tables):
+        if not isinstance(table, list):
+            raise ValueError(f"La tabla {index + 1} debe ser una lista de filas")
+        out.extend(dict(row) for row in table if isinstance(row, dict))
+    return out
+
+
+def union_tables(*tables: list[dict]) -> list[dict]:
+    """Alias de append_rows para unir tablas verticalmente."""
+    return append_rows(*tables)
+
+
+def cross_tables(left: list[dict], right: list[dict]) -> list[dict]:
+    """Producto cartesiano entre dos tablas."""
+    if not isinstance(left, list) or not isinstance(right, list):
+        raise ValueError("cross_tables espera dos listas de filas")
+    out: list[dict] = []
+    for left_row in left:
+        if not isinstance(left_row, dict):
+            continue
+        for right_row in right:
+            if not isinstance(right_row, dict):
+                continue
+            out.append(_merge_row(left_row, right_row, None, None))
+    return out
+
+
 SAFE_FUNCS = {
     "sum_field": sum_field,
     "avg_field": avg_field,
@@ -179,6 +302,15 @@ SAFE_FUNCS = {
     "derive": derive,
     "sort_rows": sort_rows,
     "limit_rows": limit_rows,
+    "merge": merge,
+    "join_tables": merge,
+    "inner_join": inner_join,
+    "left_join": left_join,
+    "right_join": right_join,
+    "outer_join": outer_join,
+    "append_rows": append_rows,
+    "union_tables": union_tables,
+    "cross_tables": cross_tables,
     "abs": abs,
     "round": round,
     "len": len,
@@ -261,7 +393,7 @@ def _validate(tree: ast.AST, context_names: set[str]) -> None:
                 raise ModelError(f"Nombre no permitido: {node.id}")
 
 
-def _compile_expression(expression: str):
+def _compile_expression(expression: str, extra_names: set[str] | None = None):
     expression = (expression or "").strip()
     if not expression:
         raise ModelError("La expresion Python esta vacia")
@@ -271,23 +403,41 @@ def _compile_expression(expression: str):
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
         raise ModelError(f"Expresion Python invalida: {exc.msg}") from exc
-    _validate(tree, {"rows", "row"})
+    names = {"rows", "row", "tables"}
+    if extra_names:
+        names.update(extra_names)
+    _validate(tree, names)
     return compile(tree, "<model>", "eval")
 
 
-def validate_expression(expression: str) -> None:
+def validate_expression(expression: str, extra_names: set[str] | None = None) -> None:
     """Valida la sintaxis y las operaciones permitidas sin ejecutar la expresion."""
-    _compile_expression(expression)
+    _compile_expression(expression, extra_names)
 
 
-def evaluate(expression: str, rows: list[dict], row: dict | None = None) -> Any:
-    compiled = _compile_expression(expression)
+def evaluate(
+    expression: str,
+    rows: list[dict],
+    row: dict | None = None,
+    tables: dict[str, list[dict]] | None = None,
+) -> Any:
+    table_map: dict[str, list[dict]] = {}
+    extra_names: set[str] = set()
+    if isinstance(tables, dict):
+        for alias, table_rows in tables.items():
+            if not isinstance(alias, str) or not alias.isidentifier():
+                continue
+            if alias in {"rows", "row", "tables"} or alias in SAFE_FUNCS or alias in SAFE_NAMES:
+                continue
+            if not isinstance(table_rows, list):
+                continue
+            table_map[alias] = table_rows
+            extra_names.add(alias)
+    compiled = _compile_expression(expression, extra_names)
+    scope = {**SAFE_FUNCS, **SAFE_NAMES, "rows": rows, "row": row, "tables": table_map}
+    scope.update(table_map)
     try:
-        return eval(
-            compiled,
-            {"__builtins__": {}},
-            {**SAFE_FUNCS, **SAFE_NAMES, "rows": rows, "row": row},
-        )
+        return eval(compiled, {"__builtins__": {}}, scope)
     except ModelError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -354,6 +504,7 @@ def preview(
     columns: list[str] | None = None,
     config: dict | None = None,
     limit: int = 50,
+    tables: dict[str, list[dict]] | None = None,
 ) -> dict:
     kind = (kind or "measure").strip().lower()
     config = dict(config or {})
@@ -361,7 +512,7 @@ def preview(
     columns = list(columns or (list(rows[0].keys()) if rows else []))
 
     if kind == "measure":
-        value = evaluate(expression, rows)
+        value = evaluate(expression, rows, tables=tables)
         return {"kind": kind, "value": _jsonable(value), "rows": len(rows)}
 
     if kind == "column":
@@ -369,7 +520,7 @@ def preview(
         out = []
         for row in rows[:limit]:
             new_row = dict(row)
-            new_row[name] = _jsonable(evaluate(expression, rows, row))
+            new_row[name] = _jsonable(evaluate(expression, rows, row, tables=tables))
             out.append(new_row)
         return {
             "kind": kind,
@@ -381,7 +532,7 @@ def preview(
         }
 
     if kind == "table_calc":
-        result = evaluate(expression, rows)
+        result = evaluate(expression, rows, tables=tables)
         if not isinstance(result, list):
             raise ModelError("La tabla calculada debe devolver una lista de filas")
         result = [row for row in result if isinstance(row, dict)]

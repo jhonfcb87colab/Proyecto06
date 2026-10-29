@@ -3,7 +3,7 @@
   "use strict";
 
   const NS = "http://www.w3.org/2000/svg";
-  const PALETTE = ["#8aa9e6", "#7fc8c2", "#f3b6a6", "#f6d186", "#b8a6e0", "#9ccf9b", "#f2a7c3", "#a9c7e8"];
+  const PALETTE = ["#1e3a8a", "#c6a24b", "#6a1b4d", "#8a6f3a", "#a1b2d6", "#8c4a2f", "#c6a24b", "#d9b1c7"];
   const W = 720;
   const H = 340;
 
@@ -95,7 +95,7 @@
       const value = min + (span * i) / ticks;
       const yy = y(value);
       svg.appendChild(
-        svgEl("line", { x1: margin.l, x2: W - margin.r, y1: yy, y2: yy, stroke: "#e5e7eb", "stroke-width": 1 })
+        svgEl("line", { x1: margin.l, x2: W - margin.r, y1: yy, y2: yy, stroke: "#d8d2c8", "stroke-width": 1 })
       );
       const label = svgEl("text", {
         x: margin.l - 10,
@@ -216,7 +216,7 @@
     for (let i = 0; i <= 4; i += 1) {
       const value = (max * i) / 4;
       const xx = margin.l + (plotW * i) / 4;
-      svg.appendChild(svgEl("line", { x1: xx, x2: xx, y1: margin.t, y2: H - margin.b, stroke: "#e5e7eb", "stroke-width": 1 }));
+      svg.appendChild(svgEl("line", { x1: xx, x2: xx, y1: margin.t, y2: H - margin.b, stroke: "#d8d2c8", "stroke-width": 1 }));
       const label = svgEl("text", { x: xx, y: H - margin.b + 18, "text-anchor": "middle", class: "axis-label" });
       label.textContent = percent ? value.toFixed(0) + "%" : short(value);
       svg.appendChild(label);
@@ -409,7 +409,7 @@
       const path = svgEl("path", {
         d: arcPath(cx, cy, r, angle, angle + slice),
         fill: color(index),
-        stroke: "#ffffff",
+        stroke: "#f8f6f1",
         "stroke-width": 2,
       });
       path.appendChild(
@@ -419,7 +419,7 @@
       angle += slice;
     });
     if (doughnut) {
-      svg.appendChild(svgEl("circle", { cx: cx, cy: cy, r: r * 0.55, fill: "#ffffff" }));
+      svg.appendChild(svgEl("circle", { cx: cx, cy: cy, r: r * 0.55, fill: "#f8f6f1" }));
       const centerValue = svgEl("text", { x: cx, y: cy - 2, "text-anchor": "middle", class: "pie-center-value" });
       centerValue.textContent = short(total);
       svg.appendChild(centerValue);
@@ -509,7 +509,7 @@
       const value = xMin + ((xMax - xMin) * i) / 4;
       const xx = margin.l + (plotW * i) / 4;
       svg.appendChild(
-        svgEl("line", { x1: xx, x2: xx, y1: margin.t, y2: H - margin.b, stroke: "#eef1f5", "stroke-width": 1 })
+        svgEl("line", { x1: xx, x2: xx, y1: margin.t, y2: H - margin.b, stroke: "#d8d2c8", "stroke-width": 1 })
       );
       const label = svgEl("text", { x: xx, y: H - margin.b + 18, "text-anchor": "middle", class: "axis-label" });
       label.textContent = short(value);
@@ -523,7 +523,7 @@
         cy: y(point.y),
         r: radius,
         fill: bubble ? "rgba(127,200,194,0.62)" : "rgba(138,169,230,0.78)",
-        stroke: bubble ? "#4f9e98" : "#5c7fc2",
+        stroke: bubble ? "#1e3a8a" : "#1e3a8a",
         "stroke-width": 1,
       });
       circle.appendChild(svgEl("title", {}, point.label + " · x: " + short(point.x) + " · y: " + format(point.y, data.format)));
@@ -561,7 +561,7 @@
         width: barW,
         height: Math.max(1, bottom - top),
         rx: 3,
-        fill: point.value >= 0 ? "#7fc8c2" : "#f3b6a6",
+        fill: point.value >= 0 ? "#c6a24b" : "#8c4a2f",
       });
       rect.appendChild(svgEl("title", {}, point.label + ": " + format(point.value, data.format)));
       svg.appendChild(rect);
@@ -573,7 +573,7 @@
             x2: margin.l + (index + 1) * groupW + (groupW - barW) / 2,
             y1: nextY,
             y2: nextY,
-            stroke: "#b7c0cc",
+            stroke: "#5b5a57",
             "stroke-dasharray": "3 3",
           })
         );
@@ -666,7 +666,7 @@
         height: Math.max(1, tile.height - 2),
         rx: 4,
         fill: color(index),
-        stroke: "#ffffff",
+        stroke: "#f8f6f1",
         "stroke-width": 1,
       });
       rect.appendChild(svgEl("title", {}, tile.item.label + ": " + format(tile.item.value, data.format)));
@@ -709,7 +709,7 @@
       svgEl("path", {
         d: arcStroke(cx, cy, r, start, end),
         fill: "none",
-        stroke: "#e5e9ef",
+        stroke: "#d8d2c8",
         "stroke-width": 24,
         "stroke-linecap": "round",
       })
@@ -718,15 +718,15 @@
       svgEl("path", {
         d: arcStroke(cx, cy, r, start, start + (end - start) * ratio),
         fill: "none",
-        stroke: "#7fc8c2",
+        stroke: "#c6a24b",
         "stroke-width": 24,
         "stroke-linecap": "round",
       })
     );
     const angle = start + (end - start) * ratio;
     const needle = polar(cx, cy, r - 36, angle);
-    svg.appendChild(svgEl("line", { x1: cx, y1: cy, x2: needle[0], y2: needle[1], stroke: "#31415a", "stroke-width": 3 }));
-    svg.appendChild(svgEl("circle", { cx: cx, cy: cy, r: 8, fill: "#31415a" }));
+    svg.appendChild(svgEl("line", { x1: cx, y1: cy, x2: needle[0], y2: needle[1], stroke: "#0b1b3a", "stroke-width": 3 }));
+    svg.appendChild(svgEl("circle", { cx: cx, cy: cy, r: 8, fill: "#0b1b3a" }));
     const valueText = svgEl("text", { x: cx, y: cy - 34, "text-anchor": "middle", class: "gauge-value" });
     valueText.textContent = format(value, data.format);
     svg.appendChild(valueText);
@@ -773,12 +773,12 @@
       svgEl("path", {
         d: points.map((point, index) => (index === 0 ? "M" : "L") + point[0] + "," + point[1]).join(" "),
         fill: "none",
-        stroke: "#f0a05a",
+        stroke: "#8c4a2f",
         "stroke-width": 2.5,
       })
     );
     points.forEach((point, index) => {
-      const circle = svgEl("circle", { cx: point[0], cy: point[1], r: 3.2, fill: "#f0a05a" });
+      const circle = svgEl("circle", { cx: point[0], cy: point[1], r: 3.2, fill: "#8c4a2f" });
       circle.appendChild(svgEl("title", {}, "Acumulado: " + cumulative[index] + "%"));
       svg.appendChild(circle);
     });
@@ -828,7 +828,7 @@
           y: startY + index * cell + cell / 2 + 4,
           "text-anchor": "middle",
           class: "cell-label",
-          fill: intensity > 0.55 ? "#ffffff" : "#2c3a4f",
+          fill: intensity > 0.55 ? "#f8f6f1" : "#121212",
         });
         text.textContent = Number(value).toFixed(1);
         svg.appendChild(text);
@@ -846,7 +846,7 @@
     const margin = { l: 150, r: 40, t: 20, b: 20 };
     const rowH = (H - margin.t - margin.b) / items.length;
     const svg = svgRoot();
-    svg.appendChild(svgEl("line", { x1: center, x2: center, y1: margin.t, y2: H - margin.b, stroke: "#cdd5df" }));
+    svg.appendChild(svgEl("line", { x1: center, x2: center, y1: margin.t, y2: H - margin.b, stroke: "#d8d2c8" }));
     items.forEach((item, index) => {
       const width = (Math.abs(item.score) / max) * (W - margin.l - margin.r - 30);
       const y = margin.t + index * rowH + rowH * 0.2;
@@ -856,7 +856,7 @@
         width: Math.max(1, width),
         height: Math.max(4, rowH * 0.6),
         rx: 3,
-        fill: item.score >= 0 ? "#7fc8c2" : "#f3b6a6",
+        fill: item.score >= 0 ? "#c6a24b" : "#8c4a2f",
       });
       rect.appendChild(svgEl("title", {}, item.field + " · score " + item.score + " · impacto " + item.impact + "%"));
       svg.appendChild(rect);
@@ -880,12 +880,12 @@
     const svg = svgRoot();
     const points = data.points || [];
     const regions = data.regions || [];
-    svg.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#eef5f9", rx: 8 }));
+    svg.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#ead9c3", rx: 8 }));
     for (let i = 1; i < 8; i += 1) {
-      svg.appendChild(svgEl("line", { x1: (W * i) / 8, x2: (W * i) / 8, y1: 0, y2: H, stroke: "#dbe8ef" }));
+      svg.appendChild(svgEl("line", { x1: (W * i) / 8, x2: (W * i) / 8, y1: 0, y2: H, stroke: "#d8d2c8" }));
     }
     for (let i = 1; i < 4; i += 1) {
-      svg.appendChild(svgEl("line", { x1: 0, x2: W, y1: (H * i) / 4, y2: (H * i) / 4, stroke: "#dbe8ef" }));
+      svg.appendChild(svgEl("line", { x1: 0, x2: W, y1: (H * i) / 4, y2: (H * i) / 4, stroke: "#d8d2c8" }));
     }
     if (points.length) {
       const values = points.map((point) => Math.abs(Number(point.value) || 0));
@@ -899,7 +899,7 @@
           cy: y,
           r: radius,
           fill: "rgba(127,200,194,0.7)",
-          stroke: "#3b8f89",
+          stroke: "#6a1b4d",
           "stroke-width": 1,
         });
         circle.appendChild(svgEl("title", {}, point.label + " · " + format(point.value, data.format)));
@@ -1106,7 +1106,7 @@
             x2: 12 + row.depth * 22 - 4,
             y1: y + rowH / 2,
             y2: y + rowH / 2,
-            stroke: "#cbd5e1",
+            stroke: "#5b5a57",
             "stroke-width": 1,
           })
         );
