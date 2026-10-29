@@ -1,4 +1,4 @@
-# BI Web + analisis del instalador de Power BI
+# BI Web 
 
 Dos piezas independientes en este directorio:
 

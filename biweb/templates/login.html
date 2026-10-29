@@ -3,35 +3,68 @@
 {% block body_class %}auth-page{% endblock %}
 
 {% block content %}
+<div class="auth-bg" aria-hidden="true">
+  <span class="auth-blob blob-a"></span>
+  <span class="auth-blob blob-b"></span>
+  <span class="auth-blob blob-c"></span>
+  <span class="auth-grid"></span>
+</div>
+
 <section class="auth-shell">
   <div class="auth-intro">
+    <div class="auth-logo">
+      <img src="{{ url_for('static', filename='img/logo.jpg') }}" alt="Logo" width="120" height="120">
+    </div>
     <p class="eyebrow">Analitica interna</p>
-    <h1>Entra a tu espacio de tableros</h1>
+    <h1>Entra a tu espacio de <span class="auth-highlight">tableros</span></h1>
     <p class="lead">Accede con las credenciales que te asigno el administrador. Cada rol ve solo los modulos y tableros que le corresponden.</p>
     <ul class="auth-points">
-      <li>Administrador: control de usuarios, roles, accesos y auditoria.</li>
-      <li>Auditor: lectura completa y trazabilidad, sin cambios.</li>
-      <li>Desarrollador: crea y ajusta visualizaciones asignadas.</li>
-      <li>Visualizacion: consulta solo sus tableros.</li>
+      <li style="--i: 0"><span class="auth-point-icon">&#9881;</span><span><strong>Administrador</strong>Control de usuarios, roles, accesos y auditoria.</span></li>
+      <li style="--i: 1"><span class="auth-point-icon">&#128269;</span><span><strong>Auditor</strong>Lectura completa y trazabilidad, sin cambios.</span></li>
+      <li style="--i: 2"><span class="auth-point-icon">&#128736;</span><span><strong>Desarrollador</strong>Crea y ajusta visualizaciones asignadas.</span></li>
+      <li style="--i: 3"><span class="auth-point-icon">&#128202;</span><span><strong>Visualizacion</strong>Consulta solo sus tableros.</span></li>
     </ul>
   </div>
 
-  <form class="auth-card" method="post" action="{{ url_for('login') }}">
+  <form class="auth-card{% if error %} has-error{% endif %}" method="post" action="{{ url_for('login') }}" id="login-form" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ next }}">
-    <h2>Iniciar sesion</h2>
-    <p class="hint">Usa tu usuario y contrasena.</p>
 
-    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+    <div class="auth-card-head">
+      <img class="auth-card-logo" src="{{ url_for('static', filename='img/logo.jpg') }}" alt="" width="48" height="48">
+      <div>
+        <h2>Iniciar sesion</h2>
+        <p class="hint">Usa tu usuario y contrasena.</p>
+      </div>
+    </div>
 
-    <label>Usuario
-      <input name="username" value="{{ username }}" autocomplete="username" required autofocus>
-    </label>
-    <label>Contrasena
-      <input name="password" type="password" autocomplete="current-password" required>
-    </label>
-    <button class="primary" type="submit">Entrar</button>
-    <p class="hint">Si olvidaste tu contrasena, pide al administrador que la restablezca.</p>
+    {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+
+    <div class="auth-field">
+      <svg class="auth-field-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5Z"/></svg>
+      <input id="login-username" name="username" value="{{ username }}" placeholder=" " autocomplete="username" required autofocus>
+      <label for="login-username">Usuario</label>
+    </div>
+
+    <div class="auth-field">
+      <svg class="auth-field-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 9V7a5 5 0 0 0-10 0v2H5v13h14V9h-2Zm-8-2a3 3 0 0 1 6 0v2H9V7Zm4 10.7V19h-2v-1.3a2 2 0 1 1 2 0Z"/></svg>
+      <input id="login-password" name="password" type="password" placeholder=" " autocomplete="current-password" required>
+      <label for="login-password">Contrasena</label>
+      <button type="button" class="auth-toggle" id="toggle-password" aria-label="Mostrar contrasena" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C6.5 5 2.7 9.2 1.5 12c1.2 2.8 5 7 10.5 7s9.3-4.2 10.5-7C21.3 9.2 17.5 5 12 5Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2.2a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Z"/></svg>
+      </button>
+    </div>
+    <p class="auth-caps" id="caps-warning" hidden>Bloq Mayus esta activado.</p>
+
+    <button class="primary auth-submit" type="submit">
+      <span class="auth-submit-label">Entrar</span>
+      <span class="auth-spinner" aria-hidden="true"></span>
+    </button>
+    <p class="hint auth-foot">Si olvidaste tu contrasena, pide al administrador que la restablezca.</p>
   </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='login.js') }}"></script>
 {% endblock %}
