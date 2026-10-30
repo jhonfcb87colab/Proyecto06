@@ -100,6 +100,13 @@ code {
   font-weight: 800;
 }
 .brand-text { font-size: 16px; }
+.brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.6);
+}
 
 .topbar-actions {
   display: flex;
@@ -1747,3 +1754,9 @@ body.widget-moving .widget-drag { cursor: grabbing; }
 .filter-group summary { cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--ink); }
 .filter-values { margin-top: 4px; }
 .tree-root { font-size: 12px; font-weight: 800; fill: var(--ink); font-family: inherit; }
+
+/* ----------------------------------------------------- paginas embebidas */
+/* Una pagina abierta dentro de una ventana del escritorio no repite la barra superior */
+.embedded .topbar { display: none; }
+.embedded .page { padding: 18px 20px 30px; }
+.embedded .admin-nav { position: static; }

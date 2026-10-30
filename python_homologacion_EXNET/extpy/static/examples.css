@@ -1,0 +1,16 @@
+/* Equivalente reducido de /resources/css/examples.css del proyecto Ext.NET */
+body {
+    font-family: "Open Sans", "Helvetica Neue", helvetica, arial, sans-serif;
+    font-size: 14px;
+    padding: 20px;
+}
+
+h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 16px;
+}
+
+p {
+    margin: 0 0 12px;
+}

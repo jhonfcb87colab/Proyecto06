@@ -1,0 +1,406 @@
+/* Escritorio BI Web: menu de arbol (oeste) + ventanas (centro) + barra de tareas */
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+.workspace-page .topbar { flex: none; }
+.workspace-page .page {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workspace-page .flash-stack { margin: 10px 16px; }
+
+.ws-shell {
+  --ws-tree-w: 280px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--ws-tree-w) 6px 1fr;
+  transition: grid-template-columns 0.25s ease;
+}
+.ws-shell.tree-collapsed { grid-template-columns: 0 0 1fr; }
+.ws-shell.tree-collapsed .ws-tree-panel { visibility: hidden; }
+
+/* ------------------------------------------------- panel oeste: arbol */
+.ws-tree-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.ws-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 10px 8px 16px;
+}
+.ws-tree-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.ws-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ws-icon-btn svg { width: 17px; height: 17px; fill: var(--muted); }
+.ws-icon-btn:hover { background: var(--surface-2); }
+.ws-icon-btn:hover svg { fill: var(--primary-dark); }
+
+.ws-tree-search { position: relative; display: block; margin: 0 12px 8px; }
+.ws-tree-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  fill: var(--muted);
+  pointer-events: none;
+}
+.ws-tree-search input { padding-left: 32px; border-radius: 10px; background: var(--bg); }
+
+.ws-tree, .ws-group { list-style: none; margin: 0; padding: 0; }
+.ws-tree { flex: 1; overflow: auto; padding: 4px 8px 16px; }
+.ws-tree-empty { padding: 8px 18px; color: var(--muted); font-size: 12.5px; }
+
+.ws-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px 4px calc(6px + var(--depth) * 16px);
+  border-radius: 9px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background 0.12s, color 0.12s;
+}
+.ws-node-row:hover { background: var(--surface-2); }
+.ws-node-row:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+.ws-caret { flex: none; display: grid; place-items: center; width: 16px; height: 16px; }
+.ws-caret svg { width: 14px; height: 14px; fill: var(--muted); transition: transform 0.2s ease; }
+.ws-node[aria-expanded="true"] > .ws-node-row .ws-caret svg { transform: rotate(90deg); }
+.ws-node-icon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
+.ws-node-icon svg { width: 16px; height: 16px; fill: var(--primary); }
+.is-folder > .ws-node-row .ws-node-icon svg { fill: var(--accent-dark); }
+.is-folder > .ws-node-row { font-weight: 700; }
+.ws-node-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.ws-node-text mark { background: rgba(212, 175, 55, 0.45); color: inherit; border-radius: 3px; padding: 0 1px; }
+.ws-node.is-hidden { display: none; }
+.ws-node.is-leaf.is-active > .ws-node-row { background: var(--primary); color: var(--surface); }
+.ws-node.is-leaf.is-active > .ws-node-row .ws-node-icon svg { fill: var(--accent); }
+
+/* Expandir / contraer animado (grid 0fr -> 1fr) */
+.ws-group { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s ease; }
+.ws-node[aria-expanded="true"] > .ws-group { grid-template-rows: 1fr; }
+.ws-group-inner { overflow: hidden; min-height: 0; }
+
+.ws-splitter { cursor: col-resize; background: transparent; transition: background 0.15s; touch-action: none; }
+.ws-splitter:hover { background: rgba(212, 175, 55, 0.45); }
+
+/* ------------------------------------------ centro: escritorio + tareas */
+.ws-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ws-desktop {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(30, 58, 138, 0.10), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(106, 27, 77, 0.10), transparent 45%),
+    var(--bg);
+}
+/* Mientras se arrastra, los iframes no deben "robar" el puntero */
+.ws-desktop.ws-busy iframe { pointer-events: none; }
+.ws-desktop.ws-busy { user-select: none; }
+
+.ws-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  transition: opacity 0.25s;
+}
+.ws-empty img { border-radius: 24px; box-shadow: var(--shadow); }
+.ws-empty h2 { color: var(--ink); font-size: 22px; margin-top: 6px; }
+.ws-empty p { max-width: 440px; font-size: 13.5px; }
+.ws-empty.is-hidden { opacity: 0; pointer-events: none; }
+
+.ws-snap-preview {
+  position: absolute;
+  z-index: 99998;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 14px;
+  background: rgba(30, 58, 138, 0.14);
+  border: 2px solid rgba(30, 58, 138, 0.45);
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+.ws-snap-preview.is-max { left: 6px; right: 6px; }
+.ws-snap-preview.is-left { left: 6px; right: 50%; }
+.ws-snap-preview.is-right { left: 50%; right: 6px; }
+
+/* ----------------------------------------------------------- ventana */
+.ws-win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(11, 27, 58, 0.16);
+  opacity: 0;
+  transform: scale(0.96) translateY(10px);
+  transition: opacity 0.18s ease, transform 0.18s ease, box-shadow 0.2s,
+              left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease;
+}
+.ws-win.is-open { opacity: 1; transform: none; }
+.ws-win.is-active { box-shadow: 0 22px 60px rgba(11, 27, 58, 0.32), 0 0 0 1px rgba(212, 175, 55, 0.55); }
+.ws-win.is-dragging,
+.ws-desktop.ws-busy .ws-win { transition: opacity 0.18s, transform 0.18s, box-shadow 0.2s; }
+.ws-win.is-min { opacity: 0; transform: scale(0.85) translateY(60%); pointer-events: none; }
+.ws-win.is-closing { opacity: 0; transform: scale(0.94); pointer-events: none; }
+.ws-win.is-max { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; border-radius: 0; }
+.ws-win.is-snap-left,
+.ws-win.is-snap-right { top: 0 !important; width: 50% !important; height: 100% !important; border-radius: 0; }
+.ws-win.is-snap-left { left: 0 !important; }
+.ws-win.is-snap-right { left: 50% !important; }
+
+.ws-win-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border-radius: 13px 13px 0 0;
+  background: linear-gradient(180deg, #ffffff, var(--surface));
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.ws-win.is-max .ws-win-head,
+.ws-win.is-snap-left .ws-win-head,
+.ws-win.is-snap-right .ws-win-head { border-radius: 0; }
+.ws-win.is-active .ws-win-head {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-bottom-color: var(--accent);
+  color: var(--surface);
+}
+.ws-win.is-dragging .ws-win-head { cursor: grabbing; }
+.ws-win-icon svg { display: block; width: 17px; height: 17px; fill: var(--primary); }
+.ws-win.is-active .ws-win-icon svg { fill: var(--accent); }
+.ws-win-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 13px; }
+.ws-win-tools { display: flex; align-items: center; gap: 1px; }
+.ws-win-tools button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ws-win-tools svg { width: 16px; height: 16px; fill: var(--muted); }
+.ws-win.is-active .ws-win-tools svg { fill: rgba(248, 246, 241, 0.85); }
+.ws-win-tools button:hover { background: rgba(127, 127, 127, 0.18); }
+.ws-win-tools button.is-close:hover { background: #c42b1c; }
+.ws-win-tools button.is-close:hover svg { fill: #fff; }
+.ws-win-sep { width: 1px; height: 16px; margin: 0 4px; background: currentColor; opacity: 0.2; }
+.ws-win .i-restore { display: none; }
+.ws-win.is-max .i-max { display: none; }
+.ws-win.is-max .i-restore { display: inline; }
+
+.ws-win-body { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 0 0 13px 13px; background: var(--bg); }
+.ws-win.is-max .ws-win-body { border-radius: 0; }
+.ws-win-body iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.ws-win-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.ws-win-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: ws-loading 1s ease-in-out infinite;
+}
+.ws-win.is-loading .ws-win-loading { opacity: 1; }
+@keyframes ws-loading { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* Asas de redimension */
+.ws-rz { position: absolute; z-index: 2; touch-action: none; }
+.ws-rz-n, .ws-rz-s { left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.ws-rz-n { top: -3px; }
+.ws-rz-s { bottom: -3px; }
+.ws-rz-e, .ws-rz-w { top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+.ws-rz-e { right: -3px; }
+.ws-rz-w { left: -3px; }
+.ws-rz-ne, .ws-rz-nw, .ws-rz-se, .ws-rz-sw { width: 14px; height: 14px; }
+.ws-rz-ne { top: -4px; right: -4px; cursor: nesw-resize; }
+.ws-rz-sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.ws-rz-nw { top: -4px; left: -4px; cursor: nwse-resize; }
+.ws-rz-se { bottom: -4px; right: -4px; cursor: nwse-resize; }
+.ws-win.is-max .ws-rz { display: none; }
+
+/* ---------------------------------------------------- barra de tareas */
+.ws-taskbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 10px;
+  background: var(--topbar);
+  border-top: 2px solid var(--accent);
+}
+.ws-start {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ws-start img { border-radius: 7px; }
+.ws-start:hover { background: rgba(248, 246, 241, 0.12); }
+.ws-tasks { flex: 1; display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ws-task {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 220px;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(248, 246, 241, 0.06);
+  color: rgba(248, 246, 241, 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+  animation: ws-task-in 0.2s ease both;
+  transition: background 0.15s, opacity 0.15s;
+}
+.ws-task svg { flex: none; width: 16px; height: 16px; fill: var(--info); }
+.ws-task span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-task::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--info);
+  opacity: 0.5;
+  transition: all 0.2s;
+}
+.ws-task:hover { background: rgba(248, 246, 241, 0.14); }
+.ws-task.is-active { background: rgba(248, 246, 241, 0.18); color: #fff; }
+.ws-task.is-active::after { left: 18%; right: 18%; background: var(--accent); opacity: 1; }
+.ws-task.is-active svg { fill: var(--accent); }
+.ws-task.is-min { opacity: 0.6; }
+.ws-task.is-min::after { opacity: 0; }
+.ws-task.is-closing { opacity: 0; }
+.ws-task-x {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  transform: translateY(-50%);
+  border-radius: 5px;
+  font-style: normal;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.ws-task:hover .ws-task-x { opacity: 0.8; }
+.ws-task-x:hover { background: #c42b1c; opacity: 1 !important; }
+@keyframes ws-task-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.ws-task-actions { display: flex; align-items: center; gap: 2px; }
+.ws-taskbar .ws-icon-btn svg { fill: rgba(248, 246, 241, 0.7); }
+.ws-taskbar .ws-icon-btn:hover { background: rgba(248, 246, 241, 0.12); }
+.ws-taskbar .ws-icon-btn:hover svg { fill: var(--accent); }
+.ws-clock { margin-left: 8px; color: rgba(248, 246, 241, 0.75); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ------------------- movil: arbol como cajon y ventanas siempre maximizadas */
+@media (max-width: 760px) {
+  .ws-shell, .ws-shell.tree-collapsed { grid-template-columns: 0 0 1fr; }
+  .ws-tree-panel {
+    position: absolute;
+    z-index: 100000;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 320px);
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.3);
+    transition: transform 0.25s ease;
+  }
+  .ws-shell.tree-collapsed .ws-tree-panel { transform: translateX(-105%); visibility: visible; }
+  .ws-splitter { display: none; }
+  .ws-task-actions [data-ws-action="cascade"],
+  .ws-task-actions [data-ws-action="tile"],
+  .ws-clock { display: none; }
+  .workspace-page .topbar .top-link { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-shell, .ws-group, .ws-win, .ws-task, .ws-caret svg, .ws-tree-panel {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -9,7 +9,7 @@ from typing import Any
 from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.exceptions import HTTPException
 
-from . import auth, model, store
+from . import auth, model, store, workspace
 from . import imports as importers
 from .admin import bp as admin_bp
 from .analytics import CHART_TYPES, build_chart_data, empty_chart, infer_fields
@@ -154,7 +154,7 @@ def _is_api() -> bool:
 def _safe_next(target: str | None) -> str:
     if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
         return target
-    return url_for("index")
+    return url_for("workspace_view")
 
 
 def _current_mode() -> str:
@@ -727,6 +727,14 @@ def create_app() -> Flask:
         return render_template("account.html")
 
     # ---------------------------------------------------------------- vistas
+    @app.get("/workspace")
+    def workspace_view():
+        return render_template(
+            "workspace.html",
+            tree=workspace.build_tree(g.user),
+            home_url=url_for("index"),
+        )
+
     @app.get("/")
     def index():
         dashboards = auth.dashboards_for(g.user)

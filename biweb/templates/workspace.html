@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Escritorio · BI Web{% endblock %}
+{% block body_class %}workspace-page{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='workspace.css') }}">{% endblock %}
+
+{% block content %}
+<div class="ws-shell" id="ws-shell">
+  <aside class="ws-tree-panel" id="ws-tree-panel" aria-label="Menu de navegacion">
+    <div class="ws-tree-head">
+      <span class="ws-tree-title">Menu</span>
+      <button type="button" class="ws-icon-btn" data-ws-action="expand-all" title="Expandir todo">
+        <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5H7Z"/></svg>
+      </button>
+      <button type="button" class="ws-icon-btn" data-ws-action="collapse-all" title="Contraer todo">
+        <svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5H7Z"/></svg>
+      </button>
+      <button type="button" class="ws-icon-btn" data-ws-action="toggle-tree" title="Ocultar menu">
+        <svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12l4.6-4.6Z"/></svg>
+      </button>
+    </div>
+    <label class="ws-tree-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5-5-5Zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z"/></svg>
+      <input type="search" id="ws-tree-filter" placeholder="Buscar opcion  (Ctrl+K)" autocomplete="off">
+    </label>
+    <ul class="ws-tree" id="ws-tree" role="tree" aria-label="Opciones"></ul>
+    <p class="ws-tree-empty" id="ws-tree-empty" hidden>Sin resultados.</p>
+  </aside>
+  <div class="ws-splitter" id="ws-splitter" role="separator" aria-orientation="vertical" title="Arrastra para ajustar; doble clic para ocultar"></div>
+
+  <section class="ws-center">
+    <div class="ws-desktop" id="ws-desktop">
+      <div class="ws-empty" id="ws-empty">
+        <img src="{{ url_for('static', filename='img/logo.jpg') }}" alt="" width="96" height="96">
+        <h2>Hola, {{ current_user.full_name or current_user.username }}</h2>
+        <p>Elige una opcion del menu de la izquierda para abrirla en una ventana.<br>
+           Puedes moverlas, redimensionarlas, maximizarlas o acoplarlas arrastrando a los bordes.</p>
+      </div>
+      <div class="ws-snap-preview" id="ws-snap-preview" hidden></div>
+    </div>
+
+    <footer class="ws-taskbar">
+      <button type="button" class="ws-start" data-ws-action="toggle-tree" title="Mostrar / ocultar menu">
+        <img src="{{ url_for('static', filename='img/logo.jpg') }}" alt="" width="26" height="26">
+      </button>
+      <div class="ws-tasks" id="ws-tasks" role="tablist" aria-label="Ventanas abiertas"></div>
+      <div class="ws-task-actions">
+        <button type="button" class="ws-icon-btn" data-ws-action="cascade" title="Cascada">
+          <svg viewBox="0 0 24 24"><path d="M3 3h12v10H3V3Zm3 5h12v10H6V8Zm3 5h12v8H9v-8Z" fill-opacity=".85"/></svg>
+        </button>
+        <button type="button" class="ws-icon-btn" data-ws-action="tile" title="Mosaico">
+          <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z"/></svg>
+        </button>
+        <button type="button" class="ws-icon-btn" data-ws-action="show-desktop" title="Minimizar todo">
+          <svg viewBox="0 0 24 24"><path d="M4 18h16v2H4v-2Z"/></svg>
+        </button>
+        <button type="button" class="ws-icon-btn" data-ws-action="close-all" title="Cerrar todas">
+          <svg viewBox="0 0 24 24"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4l5.6 5.6L5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4Z"/></svg>
+        </button>
+        <span class="ws-clock" id="ws-clock"></span>
+      </div>
+    </footer>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BIWORKSPACE = {
+    tree: {{ tree|tojson }},
+    homeUrl: {{ home_url|tojson }},
+    storageKey: {{ ("biweb.ws.v1." ~ current_user.username)|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='workspace.js') }}"></script>
+{% endblock %}
