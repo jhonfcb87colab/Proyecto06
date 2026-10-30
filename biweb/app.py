@@ -112,6 +112,7 @@ MODEL_KINDS = {
     "table_calc": "Tabla calculada",
     "table_created": "Tabla creada",
 }
+MAX_MODEL_TABLES = 10
 CHART_GROUPS = [
     ("Tablas y tarjetas", ["table", "matrix", "card", "kpi", "multi_row", "decomposition"]),
     (
@@ -283,6 +284,67 @@ def _model_dataset(dataset_id: int, limit: int = MAX_QUERY_ROWS) -> tuple[dict, 
     return dataset, connection, result
 
 
+JOIN_TYPES = {"inner", "left", "right", "outer"}
+
+
+def _model_related_tables(config: dict) -> list[dict]:
+    raw = config.get("tables") if isinstance(config, dict) else None
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise AppError("config.tables debe ser una lista de tablas relacionadas")
+    related: list[dict] = []
+    used_aliases: set[str] = set()
+    for entry in raw:
+        if isinstance(entry, dict):
+            dataset_id = _int(entry.get("id"), None)
+            alias = str(entry.get("alias") or "").strip()
+            left_key = str(entry.get("left_key") or entry.get("primary_key") or "").strip()
+            right_key = str(entry.get("right_key") or entry.get("related_key") or "").strip()
+            how = str(entry.get("how") or entry.get("join") or "inner").strip().lower()
+        else:
+            dataset_id = _int(entry, None)
+            alias = ""
+            left_key = ""
+            right_key = ""
+            how = "inner"
+        if not dataset_id:
+            raise AppError("Cada tabla relacionada debe tener un id valido")
+        if not alias:
+            number = 2
+            while f"t{number}" in used_aliases:
+                number += 1
+            alias = f"t{number}"
+        if not alias.startswith("t") or alias == "t1" or not alias[1:].isdigit() or int(alias[1:]) < 2:
+            raise AppError("El alias de una tabla relacionada debe ser t2, t3, ...")
+        if alias in used_aliases:
+            raise AppError("Los alias de las tablas relacionadas no pueden repetirse")
+        if how not in JOIN_TYPES:
+            raise AppError("El tipo de cruce debe ser inner, left, right u outer")
+        used_aliases.add(alias)
+        related.append(
+            {
+                "id": dataset_id,
+                "alias": alias,
+                "left_key": left_key[:120],
+                "right_key": right_key[:120],
+                "how": how,
+            }
+        )
+    if len(related) > MAX_MODEL_TABLES:
+        raise AppError(f"Puedes cruzar hasta {MAX_MODEL_TABLES} tablas adicionales")
+    return related
+
+
+def _model_expression_names(related: list[dict]) -> set[str]:
+    return {"t1", *(item["alias"] for item in related)}
+
+
+def _validate_model_related(payload: dict) -> None:
+    for item in payload["config"].get("tables", []):
+        _model_dataset(item["id"], limit=1)
+
+
 IMPORTED_CONNECTION_NAME = "Datos importados"
 
 
@@ -390,12 +452,13 @@ def _render_payload(dashboard_id: int) -> dict:
     }
 
 
-def _apply_model_item(item: dict, result: dict) -> dict:
+def _apply_model_item(item: dict, result: dict, tables: dict[str, list[dict]] | None = None) -> dict:
     kind = item.get("kind")
     expression = item.get("expression") or ""
     config = item.get("config") or {}
+    tables = tables or {}
     if kind == "measure":
-        value = model.evaluate(expression, result["rows"])
+        value = model.evaluate(expression, result["rows"], tables=tables)
         return {"columns": [item["name"]], "rows": [{item["name"]: value}], "truncated": False, "elapsed_ms": 0}
     preview = model.preview(
         kind,
@@ -404,6 +467,7 @@ def _apply_model_item(item: dict, result: dict) -> dict:
         result["columns"],
         config,
         limit=MAX_QUERY_ROWS,
+        tables=tables,
     )
     return {
         "columns": preview.get("columns") or [],
@@ -417,6 +481,46 @@ def _render_widgets_with(widgets: list[dict], datasets_by_id: dict[int, dict]) -
     cache: dict[int, dict] = {}
     model_cache: dict[int, dict] = {}
     connections: dict[int, dict] = {}
+
+    def dataset_result(dataset_key: int) -> dict:
+        if dataset_key in cache:
+            return cache[dataset_key]
+        dataset = datasets_by_id.get(dataset_key)
+        if not dataset:
+            cache[dataset_key] = {"error": "Dataset no encontrado"}
+            return cache[dataset_key]
+        connection_id = dataset["connection_id"]
+        if connection_id not in connections:
+            connections[connection_id] = store.get_connection(connection_id)
+        connection = connections.get(connection_id)
+        if not connection:
+            cache[dataset_key] = {"error": "Conexion no encontrada"}
+            return cache[dataset_key]
+        try:
+            cache[dataset_key] = run_query(connection, dataset["sql"], limit=MAX_QUERY_ROWS)
+        except AppError as exc:
+            cache[dataset_key] = {"error": exc.message}
+        return cache[dataset_key]
+
+    def related_tables(model_item: dict, dataset_key: int, primary_rows: list[dict]) -> dict[str, list[dict]]:
+        tables: dict[str, list[dict]] = {"t1": primary_rows}
+        config = model_item.get("config") or {}
+        raw = config.get("tables") or []
+        if not isinstance(raw, list):
+            raise AppError("La configuracion de tablas del modelo no es valida")
+        for entry in raw:
+            related_id = _int(entry.get("id") if isinstance(entry, dict) else entry, None)
+            alias = str(entry.get("alias") or "").strip() if isinstance(entry, dict) else ""
+            if not related_id or related_id == dataset_key or not alias:
+                continue
+            if alias in tables:
+                continue
+            related = dataset_result(related_id)
+            if "error" in related:
+                raise AppError(f"No se pudo cargar la tabla {alias}: {related['error']}")
+            tables[alias] = related["rows"]
+        return tables
+
     out = []
     for widget in widgets:
         dataset_id = widget.get("dataset_id")
@@ -427,39 +531,29 @@ def _render_widgets_with(widgets: list[dict], datasets_by_id: dict[int, dict]) -
         elif dataset is None:
             chart = empty_chart(widget, "El widget no tiene dataset valido")
         else:
-            if dataset["connection_id"] not in connections:
-                connections[dataset["connection_id"]] = store.get_connection(dataset["connection_id"])
-            connection = connections.get(dataset["connection_id"])
-            if not connection:
-                chart = empty_chart(widget, "Conexion no encontrada")
+            result = dataset_result(dataset_id)
+            if "error" in result:
+                chart = empty_chart(widget, result["error"])
             else:
-                if dataset_id not in cache:
-                    try:
-                        cache[dataset_id] = run_query(connection, dataset["sql"], limit=MAX_QUERY_ROWS)
-                    except AppError as exc:
-                        cache[dataset_id] = {"error": exc.message}
-                result = cache[dataset_id]
+                model_id = (widget.get("config") or {}).get("model_item_id")
+                if model_id:
+                    model_id = _int(model_id, None)
+                    if model_id and model_id not in model_cache:
+                        model_item = store.get_model_item(model_id)
+                        if not model_item or model_item.get("dataset_id") != dataset_id:
+                            model_cache[model_id] = {"error": "El modelo aplicado ya no esta disponible"}
+                        else:
+                            try:
+                                tables = related_tables(model_item, dataset_id, result["rows"])
+                                model_cache[model_id] = _apply_model_item(model_item, result, tables)
+                            except Exception as exc:  # noqa: BLE001
+                                model_cache[model_id] = {"error": f"Error en el modelo: {exc}"}
+                    if model_id:
+                        result = model_cache[model_id]
                 if "error" in result:
                     chart = empty_chart(widget, result["error"])
                 else:
-                    model_id = (widget.get("config") or {}).get("model_item_id")
-                    if model_id:
-                        model_id = _int(model_id, None)
-                        if model_id and model_id not in model_cache:
-                            model_item = store.get_model_item(model_id)
-                            if not model_item or model_item.get("dataset_id") != dataset_id:
-                                model_cache[model_id] = {"error": "El modelo aplicado ya no esta disponible"}
-                            else:
-                                try:
-                                    model_cache[model_id] = _apply_model_item(model_item, result)
-                                except Exception as exc:  # noqa: BLE001
-                                    model_cache[model_id] = {"error": f"Error en el modelo: {exc}"}
-                        if model_id:
-                            result = model_cache[model_id]
-                    if "error" in result:
-                        chart = empty_chart(widget, result["error"])
-                    else:
-                        chart = build_chart_data(widget, result)
+                    chart = build_chart_data(widget, result)
         if isinstance(chart, dict):
             chart["dataset_id"] = dataset_id
         item = dict(widget)
@@ -905,6 +999,21 @@ def create_app() -> Flask:
         store.delete_dataset(dataset_id)
         return jsonify(ok=True)
 
+    @app.get("/api/datasets/<int:dataset_id>/sample")
+    @auth.require_permissions("datasets.view")
+    @require_design_access
+    def datasets_sample(dataset_id: int):
+        limit = max(1, min(_int(request.args.get("limit"), 4) or 4, 20))
+        dataset, _, result = _model_dataset(dataset_id, limit=limit)
+        return jsonify(
+            dataset={"id": dataset["id"], "name": dataset["name"]},
+            columns=result["columns"],
+            rows=result["rows"],
+            fields=infer_fields(result["columns"], result["rows"]),
+            row_count=result.get("row_count", len(result["rows"])),
+            truncated=result.get("truncated", False),
+        )
+
     @app.post("/api/datasets/preview")
     @auth.require_permissions("datasets.manage")
     @require_design
@@ -972,14 +1081,17 @@ def create_app() -> Flask:
         expression = str(body.get("expression") or "").strip()
         if kind != "table_created" and not expression:
             raise AppError("La expresion Python es obligatoria")
-        if kind != "table_created":
-            try:
-                model.validate_expression(expression)
-            except ModelError as exc:
-                raise AppError(str(exc)) from exc
         config = body.get("config") or {}
         if not isinstance(config, dict):
             raise AppError("config debe ser un objeto")
+        related = [item for item in _model_related_tables(config) if item["id"] != dataset_id]
+        config = dict(config)
+        config["tables"] = related
+        if kind != "table_created":
+            try:
+                model.validate_expression(expression, _model_expression_names(related))
+            except ModelError as exc:
+                raise AppError(str(exc)) from exc
         return {
             "kind": kind,
             "dataset_id": dataset_id,
@@ -1009,6 +1121,7 @@ def create_app() -> Flask:
         if not name:
             raise AppError("El nombre es obligatorio")
         dataset, connection, _ = _model_dataset(payload["dataset_id"], limit=1)
+        _validate_model_related(payload)
         row = store.create_model_item(
             kind=payload["kind"],
             name=name,
@@ -1035,6 +1148,7 @@ def create_app() -> Flask:
         payload = _model_body()
         name = str(body.get("name") or current["name"]).strip()
         dataset, connection, _ = _model_dataset(payload["dataset_id"], limit=1)
+        _validate_model_related(payload)
         row = store.update_model_item(
             item_id,
             kind=payload["kind"],
@@ -1068,6 +1182,31 @@ def create_app() -> Flask:
         payload = _model_body()
         limit = max(1, min(_int(body.get("limit"), 50) or 50, 500))
         dataset, _, result = _model_dataset(payload["dataset_id"])
+        tables = {"t1": result["rows"]}
+        model_tables = [
+            {
+                "id": dataset["id"],
+                "name": dataset["name"],
+                "alias": "t1",
+                "primary": True,
+                "rows": len(result["rows"]),
+            }
+        ]
+        for item in payload["config"].get("tables", []):
+            related_dataset, _, related_result = _model_dataset(item["id"])
+            tables[item["alias"]] = related_result["rows"]
+            model_tables.append(
+                {
+                    "id": related_dataset["id"],
+                    "name": related_dataset["name"],
+                    "alias": item["alias"],
+                    "primary": False,
+                    "rows": len(related_result["rows"]),
+                    "left_key": item.get("left_key") or "",
+                    "right_key": item.get("right_key") or "",
+                    "how": item.get("how") or "inner",
+                }
+            )
         try:
             preview = model.preview(
                 payload["kind"],
@@ -1076,10 +1215,12 @@ def create_app() -> Flask:
                 result["columns"],
                 payload["config"],
                 limit=limit,
+                tables=tables,
             )
         except ModelError as exc:
             raise AppError(str(exc)) from exc
         preview["dataset"] = {"id": dataset["id"], "name": dataset["name"]}
+        preview["model_tables"] = model_tables
         preview["source_rows"] = len(result["rows"])
         preview["source_truncated"] = result.get("truncated", False)
         return jsonify(preview)

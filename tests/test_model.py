@@ -40,6 +40,70 @@ class ModelExpressionTests(unittest.TestCase):
         with self.assertRaises(ModelError):
             validate_expression("unknown_function(rows)")
 
+    def test_merge_can_cross_two_tables(self):
+        clients = [{"id": 1, "segment": "A"}, {"id": 2, "segment": "B"}]
+        orders = [{"client_id": 1, "total": 10}, {"client_id": 1, "total": 25}, {"client_id": 9, "total": 7}]
+        merged = evaluate(
+            'merge(rows, t2, "client_id", "id")',
+            orders,
+            tables={"t2": clients},
+        )
+        self.assertEqual([row["total"] for row in merged], [10, 25])
+        self.assertEqual([row["segment"] for row in merged], ["A", "A"])
+        self.assertEqual(
+            evaluate('sum_field(merge(rows, t2, "client_id", "id"), "total")', orders, tables={"t2": clients}),
+            35.0,
+        )
+
+    def test_merge_supports_left_and_right_joins(self):
+        left = [{"id": 1, "value": 10}, {"id": 2, "value": 20}]
+        right = [{"id": 1, "label": "uno"}, {"id": 3, "label": "tres"}]
+        left_join = evaluate('merge(rows, t2, "id", "id", "left")', left, tables={"t2": right})
+        right_join = evaluate('merge(rows, t2, "id", "id", "right")', left, tables={"t2": right})
+        self.assertEqual(len(left_join), 2)
+        self.assertEqual(len(right_join), 2)
+        self.assertEqual(right_join[-1]["label"], "tres")
+
+    def test_join_shortcuts(self):
+        clients = [{"id": 1, "segment": "A"}]
+        orders = [{"client_id": 1, "total": 10}, {"client_id": 9, "total": 7}]
+        self.assertEqual(
+            len(evaluate('left_join(rows, t2, "client_id", "id")', orders, tables={"t2": clients})),
+            2,
+        )
+        self.assertEqual(
+            len(evaluate('inner_join(rows, t2, "client_id", "id")', orders, tables={"t2": clients})),
+            1,
+        )
+        self.assertEqual(
+            len(evaluate('outer_join(rows, t2, "client_id", "id")', orders, tables={"t2": clients})),
+            2,
+        )
+        self.assertEqual(
+            evaluate('union_tables(rows, t2)', self.rows, tables={"t2": clients}),
+            self.rows + clients,
+        )
+
+    def test_append_and_cross_tables(self):
+        other = [{"revenue": 25, "margin": 5}]
+        appended = evaluate("append_rows(rows, t2)", self.rows, tables={"t2": other})
+        crossed = evaluate("cross_tables(rows, t2)", self.rows, tables={"t2": other})
+        self.assertEqual(len(appended), 3)
+        self.assertEqual(len(crossed), 2)
+
+    def test_table_calc_preview_accepts_related_tables(self):
+        other = [{"id": 1, "name": "Norte"}]
+        rows = [{"client_id": 1, "total": 10}]
+        result = preview(
+            "table_calc",
+            'merge(rows, t2, "client_id", "id")',
+            rows,
+            ["client_id", "total"],
+            tables={"t2": other},
+        )
+        self.assertEqual(result["columns"], ["client_id", "total", "id", "name"])
+        self.assertEqual(result["rows"][0]["name"], "Norte")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -275,7 +275,7 @@
         <input type="hidden" id="w-pos-x" value="">
         <input type="hidden" id="w-pos-y" value="">
         <label>Titulo <input id="w-title" maxlength="120" placeholder="Ingresos por region"></label>
-        <label>Dataset <select id="w-dataset"></select></label>
+        <label>Dataset / tabla base <select id="w-dataset"></select></label>
         <label>Grafico
           <select id="w-chart">
             <optgroup label="Tablas y tarjetas">
@@ -291,8 +291,45 @@
             </optgroup>
           </select>
         </label>
-        <details class="sub-section" id="w-measure-box" open>
+        <details class="sub-section measure-box" id="w-measure-box" open>
           <summary>Medidas calculadas con Python</summary>
+          <div class="measure-toolbar">
+            <span class="hint">Revisa el dataframe activo antes de escribir la expresion.</span>
+            <button type="button" class="help-dot" id="w-measure-help" aria-label="Ver ejemplos de medidas" aria-haspopup="true" aria-expanded="false">?</button>
+          </div>
+          <div id="w-measure-tooltip" class="measure-tooltip" role="tooltip" hidden>
+            <strong>Ejemplos de medidas</strong>
+            <ul>
+              <li><code>sum_field(rows, "ingresos")</code> — total</li>
+              <li><code>avg_field(rows, "precio")</code> — promedio</li>
+              <li><code>distinct_field(rows, "cliente")</code> — valores unicos</li>
+              <li><code>sum_field(rows, "margen") / sum_field(rows, "ingresos")</code> — ratio</li>
+              <li><code>pct(sum_field(rows, "margen"), sum_field(rows, "ingresos"))</code> — porcentaje</li>
+              <li><code>round(avg_field(rows, "rating"), 2)</code> — promedio redondeado</li>
+              <li><code>sum_field(rows, "ingresos") / count_field(rows, "pedido")</code> — ticket medio</li>
+              <li><code>field(row, "precio", 0) * 1.19</code> — precio con impuesto</li>
+              <li><code>ifelse(field(row, "unidades", 0) &gt; 10, "alto", "bajo")</code> — condicional</li>
+              <li><code>merge(rows, t2, "cliente_id", "id")</code> — cruzar con otra tabla</li>
+              <li><code>left_join(rows, t2, "cliente_id", "id")</code> — conservar la tabla principal</li>
+              <li><code>sum_field(merge(rows, t2, "cliente_id", "id"), "ingresos")</code> — suma cruzada</li>
+              <li><code>append_rows(rows, t2)</code> — unir tablas verticalmente</li>
+            </ul>
+            <p class="hint"><code>rows</code> contiene las filas del dataset principal. <code>t2</code>, <code>t3</code>... son las tablas adicionales marcadas en la jerarquia. <code>row</code> es la fila actual y solo aplica a columnas calculadas.</p>
+          </div>
+          <div class="dataset-context" id="w-measure-context">
+            <div class="dataset-context-head">
+              <div>
+                <span class="eyebrow">Dataframe activo</span>
+                <strong id="w-measure-dataset-name">Sin dataset</strong>
+              </div>
+              <span class="badge" id="w-measure-dataset-meta">Sin campos</span>
+            </div>
+            <label class="table-focus-row">Ir a tabla <select id="w-measure-table-focus"></select></label>
+            <div class="table-tree" id="w-measure-tables"></div>
+            <p class="hint" id="w-measure-fields-hint">Marca tablas adicionales para cruzarlas. Al desplegar cada tabla veras sus columnas.</p>
+            <div class="join-list" id="w-measure-joins"></div>
+            <div class="mini-table" id="w-measure-sample" hidden></div>
+          </div>
           <label>Medida aplicada (opcional) <select id="w-model"></select></label>
           <div class="grid-2">
             <label>Nombre <input id="w-measure-name" maxlength="80" placeholder="Ticket medio"></label>
@@ -307,6 +344,22 @@
           <label>Expresion Python
             <textarea id="w-measure-expression" rows="3" spellcheck="false" placeholder="sum_field(rows, 'ingresos') / count_field(rows, 'pedido')"></textarea>
           </label>
+          <div class="quick-measure">
+            <label>Campo del dataframe <select id="w-quick-field"></select></label>
+            <label>Operacion
+              <select id="w-quick-op">
+                <option value="sum">sum</option>
+                <option value="avg">avg</option>
+                <option value="count">count</option>
+                <option value="count_distinct">count_distinct</option>
+                <option value="min">min</option>
+                <option value="max">max</option>
+                <option value="median">median</option>
+                <option value="stdev">stdev</option>
+              </select>
+            </label>
+            <button type="button" class="ghost" id="w-quick-add">Insertar medida</button>
+          </div>
           <button type="button" class="ghost" id="w-measure-create">Crear y aplicar medida</button>
           <div id="w-measure-result"></div>
         </details>
@@ -392,21 +445,35 @@
           <label>Tipo
             <select id="model-kind"></select>
           </label>
-          <label>Dataset <select id="model-dataset"></select></label>
+          <label>Tabla principal (dataset) <select id="model-dataset"></select></label>
+          <div class="model-tables-panel" id="model-tables-panel">
+            <div class="tree-head">
+              <span class="eyebrow">Tablas para usar o cruzar</span>
+              <span class="badge" id="model-tables-meta">1 tabla</span>
+            </div>
+            <label class="table-focus-row">Ir a tabla <select id="model-table-focus"></select></label>
+            <div class="table-tree" id="model-table-tree"></div>
+            <p class="hint" id="model-table-hint">Marca tablas adicionales para cruzar. Cada tabla recibe un alias t2, t3... y su jerarquia muestra las columnas disponibles.</p>
+            <div class="join-list" id="model-joins"></div>
+          </div>
           <label>Nombre <input id="model-name" maxlength="80" placeholder="Ingreso total"></label>
           <label>Expresion Python
             <textarea id="model-expression" rows="3" spellcheck="false" placeholder="sum_field(rows, 'revenue')"></textarea>
           </label>
           <details class="sub-section">
             <summary>Ayuda y ejemplos</summary>
-            <p class="hint">Usa una expresion Python, no DAX ni codigo Python arbitrario. Se permiten operaciones, condicionales y funciones del catalogo seguro. <code>rows</code> contiene las filas del dataset; <code>row</code> es la fila actual en una columna calculada.</p>
+            <p class="hint">Usa una expresion Python, no DAX ni codigo Python arbitrario. Se permiten operaciones, condicionales y funciones del catalogo seguro. <code>rows</code> contiene el dataset principal; <code>row</code> es la fila actual en una columna calculada. Las tablas adicionales se usan con <code>t2</code>, <code>t3</code>...</p>
             <ul class="hint">
               <li>Ingresos totales: <code>sum_field(rows, "revenue")</code></li>
               <li>Porcentaje de margen: <code>pct(sum_field(rows, "margin"), sum_field(rows, "revenue"))</code></li>
+              <li>Cruzar por llave: <code>merge(rows, t2, "cliente_id", "id")</code></li>
+              <li>Cruce izquierdo: <code>left_join(rows, t2, "cliente_id", "id")</code></li>
+              <li>Suma tras cruzar: <code>sum_field(merge(rows, t2, "cliente_id", "id"), "revenue")</code></li>
+              <li>Unir tablas: <code>append_rows(rows, t2)</code> · Producto: <code>cross_tables(rows, t2)</code></li>
               <li>Precio con impuesto por fila: <code>field(row, "price", 0) * 1.19</code></li>
               <li>Condicion: <code>ifelse(field(row, "units", 0) &gt; 10, "alto", "bajo")</code></li>
             </ul>
-            <p class="hint">Funciones: <code>sum_field</code>, <code>avg_field</code>, <code>count_field</code>, <code>distinct_field</code>, <code>min_field</code>, <code>max_field</code>, <code>median_field</code>, <code>stdev_field</code>, <code>field</code>, <code>ifelse</code>, <code>coalesce</code> y <code>pct</code>. La expresion se valida al guardar y puedes probarla antes.</p>
+            <p class="hint">Funciones: <code>sum_field</code>, <code>avg_field</code>, <code>count_field</code>, <code>distinct_field</code>, <code>min_field</code>, <code>max_field</code>, <code>median_field</code>, <code>stdev_field</code>, <code>field</code>, <code>ifelse</code>, <code>coalesce</code>, <code>pct</code>, <code>merge</code>, <code>inner_join</code>, <code>left_join</code>, <code>right_join</code>, <code>outer_join</code>, <code>append_rows</code>, <code>union_tables</code> y <code>cross_tables</code>. La expresion se valida al guardar y puedes probarla antes.</p>
           </details>
           <div class="grid-2">
             <label>Medida rapida: campo <select id="quick-field"></select></label>
