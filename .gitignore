@@ -1,6 +1,27 @@
+# Datos, modelos y salidas: nunca al repositorio
+*.parquet
+*.csv
+!entrega/*.csv
+*.joblib
+*.pkl
+*.zip
+*.geojson
+*.shp
+
+# Exportaciones con salidas: nunca. Los .ipynb se suben, pero sin salidas
+#*.html
+*.dbc
+.ipynb_checkpoints/
+
+# Seguridad: sales, claves y carpetas privadas
+SEGURIDAD/
+PRIVADO/
+*.key
+sal_*.txt
+clave_*.txt
+
+# Python y temporales
 __pycache__/
 *.pyc
-.venv/
-var/
-extracted/
-venv/
+#temporal/
+*.tmp
